@@ -202,17 +202,23 @@ where
     ) -> (OpenedValues<Challenge>, Self::Proof) {
         /*
 
+        q_1(x) = p(x) - p(z_1) / (x - z_1)
+        q_2(x) = p(x) - p(z_1) / (x - z_1)
+
+
         A quick rundown of the optimizations in this function:
         We are trying to compute sum_i alpha^i * (p(X) - y)/(X - z),
-        for each z an opening point, y = p(z). Each p(X) is given as evaluations in bit-reversed order
-        in the columns of the matrices. y is computed by barycentric interpolation.
+        for each z an opening point, y = p(z). 
+        Each p(X) is given as evaluations in bit-reversed order
+        in the columns of the matrices. 
+        y is computed by barycentric interpolation.
         X and p(X) are in the base field; alpha, y and z are in the extension.
         The primary goal is to minimize extension multiplications.
 
         - Instead of computing all alpha^i, we just compute alpha^i for i up to the largest width
         of a matrix, then multiply by an "alpha offset" when accumulating.
               a^0 x0 + a^1 x1 + a^2 x2 + a^3 x3 + ...
-            = a^0 ( a^0 x0 + a^1 x1 ) + a^2 ( a^0 x0 + a^1 x1 ) + ...
+            = a^0 ( a^0 x0 + a^1 x1 ) + a^2 ( a^0 x2 + a^1 x3 ) + ...
             (see `alpha_pows`, `alpha_pow_offset`, `num_reduced`)
 
         - For each unique point z, we precompute 1/(X-z) for the largest subgroup opened at this point.
@@ -243,6 +249,7 @@ where
         let mats_and_points = rounds
             .iter()
             .map(|(data, points)| {
+                // data在这里代表一个多项式，points在这里代表要对一个多项式打开哪些点
                 (
                     self.mmcs
                         .get_matrices(data)
@@ -279,16 +286,17 @@ where
                 debug_assert_eq!(reduced_opening_for_log_height.len(), mat.height());
 
                 let opened_values_for_mat = opened_values_for_round.pushed_mut(vec![]);
-                for &point in points_for_mat {
+                for &point in points_for_mat { //对一个matrix打开第一个点
                     let _guard =
                         info_span!("reduce matrix quotient", dims = %mat.dimensions()).entered();
 
                     // Use Barycentric interpolation to evaluate the matrix at the given point.
-                    let ys = info_span!("compute opened values with Lagrange interpolation")
+                    let ys: Vec<Challenge> = info_span!("compute opened values with Lagrange interpolation")
                         .in_scope(|| {
                             let (low_coset, _) =
-                                mat.split_rows(mat.height() >> self.fri.log_blowup);
-                            interpolate_coset(
+                                mat.split_rows(mat.height() >> self.fri.log_blowup); // 得到原来的多项式 
+                                // 每一列evaluate为一个值
+                            interpolate_coset( 
                                 &BitReversalPerm::new_view(low_coset),
                                 Val::generator(),
                                 point,
@@ -296,15 +304,19 @@ where
                         });
 
                     let alpha_pow_offset = alpha.exp_u64(num_reduced[log_height] as u64);
+                    // sum_i [ alpha^i * y[i] ]
                     let reduced_ys: Challenge = dot_product(alpha.powers(), ys.iter().copied());
 
                     info_span!("reduce rows").in_scope(|| {
+                        // sum_i [ alpha^i * p_i[X]  with alpha^i an extension, p_i[X] a base
                         mat.dot_ext_powers(alpha)
                             .zip(reduced_opening_for_log_height.par_iter_mut())
                             // This might be longer, but zip will truncate to smaller subgroup
                             // (which is ok because it's bitrev)
                             .zip(inv_denoms.get(&point).unwrap().par_iter())
                             .for_each(|((reduced_row, ro), &inv_denom)| {
+                                //  reduced[X] += alpha_offset * inv_denom[X] * [ sum_i [ alpha^i * p_i[X] ] - sum_i [ alpha^i * y[i] ] ]
+                                //计算reduce得到的q(x) 这里意味着会将相同matrix的不同打开点对应的q(x)的【相同行】 通过alpha的线性组合reduce到一起： 最后得到一个一列的matrix，高度跟原来一样
                                 *ro += alpha_pow_offset * (reduced_row - reduced_ys) * inv_denom
                             })
                     });

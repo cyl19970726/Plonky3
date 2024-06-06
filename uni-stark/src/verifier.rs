@@ -96,6 +96,17 @@ where
     )
     .map_err(|_| VerificationError::InvalidOpeningArgument)?;
 
+    // 1,2,3,4,5,6,7,8,9,10,11,12 M Q(X)) - evaluation at [W^0,...W^11] 
+    // S = 3 
+    // 1, 4, 7, 10 M1 Q_1(X^S)   [W^0,W^3,W^6,w^9]=domain_1
+    // 2, 5, 8, 11 M2 Q_2(X^S)   [W,W^4,W^7,w^10] = domain_2
+    // 3, 6, 9, 12 M3 Q_3(X^S)   [W^2,W^5,W^8,w^11] = domain_3
+
+    // Q(z) = \sum_{i=1}{S} z^{i-1} Q_i(z^S)
+    //      = Q_1(z^S) + z*Q_2(z^S) + z^2*Q_3(z^S) 
+    //      = Q_2(z^S) + z*Q_2((z*w)^S) + z^2*Q_2((z*w*w)^S)
+    // But the question is that Q_2 and Q_3  evaluation at domain_2 and domain_3 rather than at domain_1.
+    // It is the reason why we need to convert the evaluations of Q_2 and Q_3 in domain_1.   
     let zps = quotient_chunks_domains
         .iter()
         .enumerate()
@@ -105,8 +116,12 @@ where
                 .enumerate()
                 .filter(|(j, _)| *j != i)
                 .map(|(_, other_domain)| {
-                    other_domain.zp_at_point(zeta)
-                        * other_domain.zp_at_point(domain.first_point()).inverse()
+                    //   fn zp_at_point<Ext: ExtensionField<Val>>(&self, point: Ext) -> Ext {
+                    //          (point * self.shift.inverse()).exp_power_of_2(self.log_n) - Ext::one()
+                    //      }
+                    // {(zeta/(shift*w^j))^N - 1}  / {(shift/(shift*w^j))^N  - 1}
+                    other_domain.zp_at_point(zeta)  // (zeta * other_domain.shift.inverse())^N - Ext::one() 
+                        * other_domain.zp_at_point(domain.first_point()).inverse() // (domain.shift * other_domain.shift.inverse()).exp_power_of_2(self.log_n) - Ext::one()
                 })
                 .product::<SC::Challenge>()
         })
@@ -123,6 +138,8 @@ where
                 .sum::<SC::Challenge>()
         })
         .sum::<SC::Challenge>();
+    
+
 
     let sels = trace_domain.selectors_at_point(zeta);
 

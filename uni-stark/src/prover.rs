@@ -46,8 +46,11 @@ where
     let quotient_degree = 1 << log_quotient_degree;
 
     let pcs = config.pcs();
+    // shift = 1 
     let trace_domain = pcs.natural_domain_for_degree(degree);
 
+    // PCS::commmit the trace
+    // Question: each column is a polynomial how to commit?
     let (trace_commit, trace_data) =
         info_span!("commit to trace data").in_scope(|| pcs.commit(vec![(trace_domain, trace)]));
 
@@ -59,11 +62,14 @@ where
     challenger.observe_slice(public_values);
     let alpha: SC::Challenge = challenger.sample_ext_element();
 
+    // shift = 0x1f 
     let quotient_domain =
         trace_domain.create_disjoint_domain(1 << (log_degree + log_quotient_degree));
 
     let trace_on_quotient_domain = pcs.get_evaluations_on_domain(&trace_data, 0, quotient_domain);
 
+    // Question: How to dinstict the Quotient_domain and the trace_domain?
+    // 隐含了一个调整degree的过程？
     let quotient_values = quotient_values(
         air,
         public_values,
@@ -73,7 +79,18 @@ where
         alpha,
     );
     let quotient_flat = RowMajorMatrix::new_col(quotient_values).flatten_to_base();
-    let quotient_chunks = quotient_domain.split_evals(quotient_degree, quotient_flat);
+
+    // let quotient_chunk_size = 1 << (log_degree + log_quotient_degree) / 1 << log_quotient_degree = 1 << log_degree
+    // let quotient_degree = 1 << log_quotient_degree;
+    // Question: Why need to split domain and evals?
+    let quotient_chunks = quotient_domain.split_evals(quotient_degree, quotient_flat);// 隐含了一个调整degree的过程？
+    
+    // 1,2,3,4,5,6,7,8,9,10,11,12 M - evaluation at [1..12]
+    // domain F_13 (generator 2) 
+    // S = 3 
+    // 1, 4, 7, 10 M1   [5,12,8,1]domain F_13
+    // 2, 5, 8, 11 M2   [10,11,3,2] domain F_13
+    // 3, 6, 9, 12 M3   [7,9,6,3] domain F_13
     let qc_domains = quotient_domain.split_domains(quotient_degree);
 
     let (quotient_commit, quotient_data) = info_span!("commit to quotient poly chunks")
@@ -90,7 +107,7 @@ where
 
     let (opened_values, opening_proof) = pcs.open(
         vec![
-            (&trace_data, vec![vec![zeta, zeta_next]]),
+            (&trace_data, vec![vec![zeta, zeta_next]]), // why the first element different the second element?
             (
                 &quotient_data,
                 // open every chunk at zeta
@@ -174,7 +191,7 @@ where
                 alpha,
                 accumulator,
             };
-            air.eval(&mut folder);
+            air.eval(&mut folder);//make sure all the constraints are satisfied
 
             // quotient(x) = constraints(x) / Z_H(x)
             let quotient = folder.accumulator * inv_zeroifier;
