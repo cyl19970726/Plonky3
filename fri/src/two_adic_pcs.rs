@@ -310,7 +310,7 @@ where
 
                     info_span!("reduce rows").in_scope(|| {
                         // sum_i [ alpha^i * p_i[X]  with alpha^i an extension, p_i[X] a base
-                        mat.dot_ext_powers(alpha)
+                        mat.dot_ext_powers(alpha) // 会把多列的matrix变成1列 
                             .zip(reduced_opening_for_log_height.par_iter_mut())
                             // This might be longer, but zip will truncate to smaller subgroup
                             // (which is ok because it's bitrev)
@@ -328,6 +328,10 @@ where
             }
         }
 
+        // q_1(x) = p_1(x) - p_1(z_1) / (x - z_1)
+        // q_2(x) = p_1(x) - p_1(z_2) / (x - z_2)
+        // q_3(x) = p_2(x) - p_2(z_3) / (x - z_3)
+        // fri_input = Q(X) = q_1(X) + q_2(X) + q_3(X)
         let fri_input = reduced_openings.into_iter().rev().flatten().collect_vec();
 
         let g: TwoAdicFriGenericConfigForMmcs<Val, InputMmcs> =
@@ -340,6 +344,7 @@ where
                     let log_max_height = log2_strict_usize(self.mmcs.get_max_height(data));
                     let bits_reduced = log_global_max_height - log_max_height;
                     let reduced_index = index >> bits_reduced;
+                    // return the p_1(challenger), p_3(challenger) as Opening opening values 
                     let (opened_values, opening_proof) = self.mmcs.open_batch(reduced_index, data);
                     BatchOpening {
                         opened_values,
@@ -349,6 +354,19 @@ where
                 .collect()
         });
 
+        // all_opened_values places  ys-vec for vec![p_1(z_1),p_1(z_2),p_2(z_3)]
+        // fri_proof places p_1(challenger), p_3(challenger) and their merkle proof which can be verified by 
+        // reduce_ys_1 = alpha_i * p_1(z_1)_i [i is the width of p_1(x)-matrix]
+        // reduce_ys_2 = alpha_i * p_1(z_2)_i [i is the width of p_1(x)-matrix]
+        // reduce_ys_3 = alpha_i * p_2(z_3)_i [i is the width of p_2(x)-matrix]
+        // A challenger index is k 
+        // reduce_p_1(k) = alpha_i * p_1(k)_i [i is the width of p_1(x)-matrix]
+        // reduce_p_2(k) = alpha_i * p_2(k)_i [i is the width of p_2(x)-matrix]
+        // verify: 
+        // q_1(k) = reduce_p_1(k) - reduce_ys_1 / (k - z_1)
+        // q_2(k) = reduce_p_1(k) - reduce_ys_2 / (k - z_2)
+        // q_3(k) = reduce_p_2(k) - reduce_ys_3 / (k - z_3)
+        // Q(k) = q_1(k) + q_2(k) + q_3(k)
         (all_opened_values, fri_proof)
     }
 
