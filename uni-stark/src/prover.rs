@@ -116,9 +116,9 @@ where
         ],
         challenger,
     );
-    let trace_local = opened_values[0][0][0].clone();
+    let trace_local = opened_values[0][0][0].clone();//[round][matrix][point] = ys
     let trace_next = opened_values[0][0][1].clone();
-    let quotient_chunks = opened_values[1].iter().map(|v| v[0].clone()).collect_vec();
+    let quotient_chunks = opened_values[1].iter().map(|v| v[0].clone()).collect_vec(); // v = matrix, v[0] = v[point] is also ys
     let opened_values = OpenedValues {
         trace_local,
         trace_next,

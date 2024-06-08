@@ -189,7 +189,8 @@ where
 
     fn open(
         &self,
-        // For each round,
+        // For each round, 
+        // each round means a polynomial with multi open-points 
         rounds: Vec<(
             &Self::ProverData,
             // for each matrix,
@@ -362,11 +363,21 @@ where
         // A challenger index is k 
         // reduce_p_1(k) = alpha_i * p_1(k)_i [i is the width of p_1(x)-matrix]
         // reduce_p_2(k) = alpha_i * p_2(k)_i [i is the width of p_2(x)-matrix]
-        // verify: 
+        // calculate quotient polynomial: 
         // q_1(k) = reduce_p_1(k) - reduce_ys_1 / (k - z_1)
         // q_2(k) = reduce_p_1(k) - reduce_ys_2 / (k - z_2)
         // q_3(k) = reduce_p_2(k) - reduce_ys_3 / (k - z_3)
+        // Verify: 
         // Q(k) = q_1(k) + q_2(k) + q_3(k)
+        // 
+        // Fri Proof Component:
+        // BatchOpening {
+        //     opened_values, // p_1(k)  p_2(k)
+        //     opening_proof, // path     path 
+        // }
+        //
+        // all_opened_values Component:
+        //  vec![p_1(z_1),p_1(z_2),p_2(z_3)]
         (all_opened_values, fri_proof)
     }
 
@@ -384,7 +395,7 @@ where
                     // the point,
                     Challenge,
                     // values at the point
-                    Vec<Challenge>,
+                    Vec<Challenge>, // ys 
                 )>,
             )>,
         )>,
@@ -421,13 +432,21 @@ where
                 let bits_reduced = log_global_max_height - log_batch_max_height;
                 let reduced_index = index >> bits_reduced;
 
+                // verify opening 
+                // BatchOpening {
+                //     opened_values, // p_1(k)  p_2(k) reduce_index is k 
+                //     opening_proof, // path     path 
+                // }
                 self.mmcs.verify_batch(
                     batch_commit,
                     &batch_dims,
                     reduced_index,
-                    &batch_opening.opened_values,
+                    &batch_opening.opened_values, 
                     &batch_opening.opening_proof,
                 )?;
+
+                // mat_opening  places vec![p_1(k),p_2(k)] 
+                // mat_points_and_values places vec![  vec![(z_1,p_1(z_1)),(z_2,p_1(z_2))],  vec![(z_3,p_2(z_3))]] 
                 for (mat_opening, (mat_domain, mat_points_and_values)) in
                     izip!(&batch_opening.opened_values, mats)
                 {
@@ -439,7 +458,7 @@ where
                     // todo: this can be nicer with domain methods?
 
                     let x = Val::generator()
-                        * Val::two_adic_generator(log_height).exp_u64(rev_reduced_index as u64);
+                        * Val::two_adic_generator(log_height).exp_u64(rev_reduced_index as u64);// calculate k  
 
                     let (alpha_pow, ro) = reduced_openings
                         .entry(log_height)
@@ -447,7 +466,7 @@ where
 
                     for (z, ps_at_z) in mat_points_and_values {
                         for (&p_at_x, &p_at_z) in izip!(mat_opening, ps_at_z) {
-                            let quotient = (-p_at_z + p_at_x) / (-*z + x);
+                            let quotient = (-p_at_z + p_at_x) / (-*z + x); // p_at_x is p_1(k) p_2(k) and x is k ; p_at_z is p_1(z_1) p_1(z_2) p_2(z_3)
                             *ro += *alpha_pow * quotient;
                             *alpha_pow *= alpha;
                         }
