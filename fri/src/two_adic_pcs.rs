@@ -154,6 +154,51 @@ where
         }
     }
 
+
+// for the pcs verifier:
+// script conponents:
+// a matrix for multi-point open
+// reduce the same height matrix open.
+// the input of this function:
+// 
+// p_1(X), p_2(X) 
+// zeta 
+// p_1(zeta) , p_2(zeta) 
+// q_1(X) = (p_1(X) - p_1(zeta))/(X-zeta)
+// q_1(c_0) = (p_1(c_0) - p_1(zeta))/(c_0-zeta
+// assume the case:
+// commit phase  
+// 1. we have some polynomials like p_1(X), p_2(X) with the same degree 
+// 2. p_1(X), p_2(X) will resprent as P_1_m(X) and P_2_m(X) is the matrix form of p_1(X) and p_2(X)
+// 3. p_1(z_1) and p_1(z_2) is the evaluation of p_1(z_1) and p_1(z_2) at z_1 and z_2 which is the sample points produced by the Fiat-Shamir heuristic
+// 4. p_2(z_1) is the evaluation of p_2(z_1) at z_1 which is the sample points produced by the Fiat-Shamir heuristic.
+// 5. p_1_m(z_1) ,p_1_m(z_2) is the row of p_1_m(X) matrix 
+// 6. p_2_m(z_1) is the row of p_2_m(X) matrix
+// 7. compute q_1(X) = p_1(X) - p_1(z_1)/(X-z_1) and q_1'(X) = p_1(X) - p_1(z_2) / (X-z_2)
+// 8. compute q_2(X) = p_2(X) - p_2(z_1)/(X-z_1)
+// 
+// we place the matrixs of q_1(X), q_1'(X), q_2(X) follow the below sequence:
+// { q_1_m(X) , q_1'_m(X) , q_2_m(X) } 
+// 9. reduce_q_1(X) = alpha^0 * q_1_m(x)_0 ... + alpha^w_1 * q_1_m(x)_w_1   {w_1 is the width of the matrix p_1_m(X)}
+// 10. reduce_q_1'(X) = alpha^w_1 * q_1'_m(x)_0 ... + alpha^(w_1+w_1) * q_1'_m(x)_w_1   {w_1 is the width of the matrix p_1_m(X)}
+// 11. reduce_q_2(X) = alpha^w(w_1) * q_2_m(x)_0 ... + alpha^(2w_1+w_2) * q_2_m(x)_w_2   {w_2 is the width of the matrix p_2_m(X)}
+// 12. finally, compute the unique reduce_q(X) = reduce_q_1(X) + reduce_q_1'(X) + reduce_q_2(X)
+// 13. low degree test for reduce_q(X),  output the corseponding fri_input proof{  p_1(c_0),p_2(c_0) and the MTPs} and fri-proof
+// 14. output the p_1_m(z_1) ,p_1_m(z_2) and p_2_m(z_1) 
+
+// query phase:
+// 0. verify the MTPs for p_1(c_0),p_2(c_0)
+// 1. compute q_1(c_0) = p_1(c_0) - p_1(z_1)/(c_0-z_1) ; q_1'(c_0) = p_1(c_0) - p_1(z_2)/(c_0-z_2) ; q_2(c_0) = p_2(c_0) - p_2(z_1)/(c_0-z_1)
+// 2. compute reduce_q_1(c_0), reduce_q_1'(c_0), reduce_q_2(c_0) using alpha 
+// 3. compute reduce_q(c_0) = reduce_q_1(c_0) + reduce_q_1'(c_0) + reduce_q_2(c_0)
+// 4. verify reduce_q(c_0)  and the giving reduce_q(c_0)
+
+// so the input of this function is:
+// the sample index index_to_c_0 , p_1(c_0), p_2(c_0) and the MTPs,and commitment 
+// p_1_m(z_1) ,p_1_m(z_2) and p_2_m(z_1) , z_1 and z_2 
+// reduce_q(c_0)
+
+
     fn commit(
         &self,
         evaluations: Vec<(Self::Domain, RowMajorMatrix<Val>)>,
@@ -202,10 +247,8 @@ where
         challenger: &mut Challenger,
     ) -> (OpenedValues<Challenge>, Self::Proof) {
         /*
-
         q_1(x) = p(x) - p(z_1) / (x - z_1)
         q_2(x) = p(x) - p(z_1) / (x - z_1)
-
 
         A quick rundown of the optimizations in this function:
         We are trying to compute sum_i alpha^i * (p(X) - y)/(X - z),
@@ -460,15 +503,17 @@ where
                     let x = Val::generator()
                         * Val::two_adic_generator(log_height).exp_u64(rev_reduced_index as u64);// calculate k  
 
+                    // 这个主要是为了处理有多个matrix具有相同的高度的情况
                     let (alpha_pow, ro) = reduced_openings
                         .entry(log_height)
                         .or_insert((Challenge::one(), Challenge::zero()));
 
+                    // 这里处理的是 一个matrix有多个打开点的情况
                     for (z, ps_at_z) in mat_points_and_values {
-                        for (&p_at_x, &p_at_z) in izip!(mat_opening, ps_at_z) {
+                        for (&p_at_x, &p_at_z) in izip!(mat_opening, ps_at_z) { // 根据每一列处理
                             let quotient = (-p_at_z + p_at_x) / (-*z + x); // p_at_x is p_1(k) p_2(k) and x is k ; p_at_z is p_1(z_1) p_1(z_2) p_2(z_3)
                             *ro += *alpha_pow * quotient;
-                            *alpha_pow *= alpha;
+                            *alpha_pow *= alpha; 
                         }
                     }
                 }

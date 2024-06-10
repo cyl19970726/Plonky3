@@ -36,6 +36,71 @@ where
     SC: StarkGenericConfig,
     A: Air<SymbolicAirBuilder<Val<SC>>> + for<'a> Air<ProverConstraintFolder<'a, SC>>,
 {
+
+    // fib trace 
+    // a b  column 
+    // 1 2   input0 input1 
+    // 2 3
+    // 3 5
+    // 5 8
+    // 8 13   output 
+    // 
+    // 1. commit trace(X) -> root  
+    //      LDE 
+    //      merkletree commit matrix 
+    // 2. generate quotient poly 
+    //      1 == input0  2==input1              when_first_row 
+    //      13 == output                        when_last_rot
+    //      C_0(X) = a(X) + b(X) - b(gX)        when_transition
+    //      C_1(X) = a(gX) - b(X)               when_transition
+    //      q_0(X) = C_0(X) / Z_H(X)         
+    //      q_1(X) = C_1(X) / Z_H(X)
+    //      degree adjust with alpha
+    //      Q(X) = q_0'(X) + q_1'(X) 
+    // 3. split Q_(X) as Q_1(X) and Q_2(X)
+    // 4. commit Q_1(X) and Q_2(X)
+    //      LDE at coset   
+    //      merkletree commit matrix 
+    // 5. open trace(X) and Q_1(X) and Q_2(X) at zeta,zeta_next 
+    //     ldt_0(X) = (trace(X) - trace(zeta)) / (X - zeta)         
+    //     ldt_0'(X) = trace(X) - trace(zeta_next) / (X - zeta_next)
+    //     compute reduce:
+    //       reduce_0(X) = (alpha^0 * ldt_0(X)_0 ...+  alpha^i *ldt_0(X)_i) +(alpha^i+1) * ldt_0'(X) + (alpha^i+j)* ldt_0'(X)_j   【i is the width of ldt_0(X) matrix，j is the width of ldt_0'(X) matrix】 
+    //      low degree test for reduce_0(X)
+    //     output:
+    //          open_values: trace(zeta), trace(zeta_next)
+    //     fri_input: 
+    //          fri sample challenge point: beta
+    //          trace(beta) + merkle_path
+    //          trace(-beta) + merkle_path
+    //
+    //     ldt_2(X) = Q_1(X) - Q_1(zeta) / (X - zeta)
+    //     ldt_3(X) = Q_2(X) - Q_2(zeta) / (X - zeta)
+    //     compute reduce:
+    //        reduce_1(X) = (alpha^0 * ldt_2(X)_0 ...  alpha^i *ldt_2(X)_i) +(alpha^i+1) *...* ldt_3'(X) + (alpha^i+j+k+l)* ldt_2'(X)_j = 0  【i,j,k,l is the width of ldt_2(X),ldt_2'(X),ldt_3(X),ldt_3'(X)】 
+    //      low degree test for reduce_1(X)
+    //      【actually low_degree_test for vec![reduce_0(X),reduce_1(X)]】
+    //      output:
+    //          open_values: Q_1(zeta), Q_2(zeta),
+    //      fri_input output: 
+    //          fri sample challenge point: beta
+    //          Q_1(beta) + merkle_path
+    //          Q_2(beta) + merkle_path
+    //          Q_1(-beta) + merkle_path
+    //          Q_2(-beta) + merkle_path
+    //  
+    //       low_degree_test proof
+    // 6. output stark proof
+    // 
+    // ====== Query Phase ========
+    // 1. verify trace(X) and Q_1(X) and Q_2(X) at zeta,zeta_next
+    //    verify low-degre test proof
+    //    verify reduce 
+    // 2. evaluation quotient(zeta) at zeta
+    //     calculate zps
+    //     calculate quotient
+    // 3. compute Q(zeta) by trace(zeta), trace(zeta_next)
+    // 4. verify the relationship between Q(zeta) and Q_1(zeta),Q_2(zeta)
     #[cfg(debug_assertions)]
     crate::check_constraints::check_constraints(air, &trace, public_values);
 
@@ -52,7 +117,7 @@ where
     // PCS::commmit the trace
     // Question: each column is a polynomial how to commit?
     let (trace_commit, trace_data) =
-        info_span!("commit to trace data").in_scope(|| pcs.commit(vec![(trace_domain, trace)]));
+        info_span!("commit to trace data").in_scope(|| pcs.commit(vec![(trace_domain, trace)]));//degree 9 -> degree 10 w=two_adbic(10 bits)
 
     // Observe the instance.
     challenger.observe(Val::<SC>::from_canonical_usize(log_degree));
@@ -62,7 +127,7 @@ where
     challenger.observe_slice(public_values);
     let alpha: SC::Challenge = challenger.sample_ext_element();
 
-    // shift = 0x1f 
+    // shift*generator = 0x1f 
     let quotient_domain =
         trace_domain.create_disjoint_domain(1 << (log_degree + log_quotient_degree));
 

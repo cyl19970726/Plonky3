@@ -39,7 +39,7 @@ where
     let pcs = config.pcs();
     let trace_domain = pcs.natural_domain_for_degree(degree);
     let quotient_domain =
-        trace_domain.create_disjoint_domain(1 << (degree_bits + log_quotient_degree));
+        trace_domain.create_disjoint_domain(1 << (degree_bits + log_quotient_degree)); // shift = 1*g 
     let quotient_chunks_domains = quotient_domain.split_domains(quotient_degree);
 
     let air_width = <A as BaseAir<Val<SC>>>::width(air);
@@ -96,17 +96,17 @@ where
     )
     .map_err(|_| VerificationError::InvalidOpeningArgument)?;
 
-    // 1,2,3,4,5,6,7,8,9,10,11,12 M Q(X)) - evaluation at [W^0,...W^11] 
+    // 1,2,3,4,5,6,7,8,9,10,11,12 M Q(X) - evaluation at domain_0 [W^0,...W^11] = w ; w = two_adic_generator(3-bit)
     // S = 3 
-    // 1, 4, 7, 10 M1 Q_1(X^S)   [W^0,W^3,W^6,w^9]=domain_1
-    // 2, 5, 8, 11 M2 Q_2(X^S)   [W,W^4,W^7,w^10] = domain_2
-    // 3, 6, 9, 12 M3 Q_3(X^S)   [W^2,W^5,W^8,w^11] = domain_3
+    // 1, 4, 7, 10 M1 Q_1(X^S)   [W^0,W^3,W^6,w^9] =domain_1  generator w^3 = two_adic_generator(2-bit) 
+    // 2, 5, 8, 11 M2 Q_2(X^S)   [W,W^4,W^7,w^10] = domain_2  generator (w^3)*w
+    // 3, 6, 9, 12 M3 Q_3(X^S)   [W^2,W^5,W^8,w^11] = domain_3 generator (w^3)*w^2
 
     // Q(z) = \sum_{i=1}{S} z^{i-1} Q_i(z^S)
     //      = Q_1(z^S) + z*Q_2(z^S) + z^2*Q_3(z^S) 
     //      = Q_2(z^S) + z*Q_2((z*w)^S) + z^2*Q_2((z*w*w)^S)
-    // But the question is that Q_2 and Q_3  evaluation at domain_2 and domain_3 rather than at domain_1.
-    // It is the reason why we need to convert the evaluations of Q_2 and Q_3 in domain_1.   
+    // But the question is that Q_1, Q_2 and Q_3  evaluation at domain_1, domain_2 and domain_3 rather than at domain_0.
+    // Q_1 / ((shift*generator)^N-1)*((shift*generator*generator)^N-1)           
     let zps = quotient_chunks_domains
         .iter()
         .enumerate()
