@@ -37,70 +37,112 @@ where
     A: Air<SymbolicAirBuilder<Val<SC>>> + for<'a> Air<ProverConstraintFolder<'a, SC>>,
 {
 
-    // fib trace 
-    // a b  column 
-    // 1 2   input0 input1 
-    // 2 3
-    // 3 5
-    // 5 8
-    // 8 13   output 
-    // 
-    // 1. commit trace(X) -> root  
-    //      LDE 
-    //      merkletree commit matrix 
-    // 2. generate quotient poly 
-    //      1 == input0  2==input1              when_first_row 
-    //      13 == output                        when_last_rot
-    //      C_0(X) = a(X) + b(X) - b(gX)        when_transition
-    //      C_1(X) = a(gX) - b(X)               when_transition
-    //      q_0(X) = C_0(X) / Z_H(X)         
-    //      q_1(X) = C_1(X) / Z_H(X)
-    //      degree adjust with alpha
-    //      Q(X) = q_0'(X) + q_1'(X) 
-    // 3. split Q_(X) as Q_1(X) and Q_2(X)
-    // 4. commit Q_1(X) and Q_2(X)
-    //      LDE at coset   
-    //      merkletree commit matrix 
-    // 5. open trace(X) and Q_1(X) and Q_2(X) at zeta,zeta_next 
-    //     ldt_0(X) = (trace(X) - trace(zeta)) / (X - zeta)         
-    //     ldt_0'(X) = trace(X) - trace(zeta_next) / (X - zeta_next)
-    //     compute reduce:
-    //       reduce_0(X) = (alpha^0 * ldt_0(X)_0 ...+  alpha^i *ldt_0(X)_i) +(alpha^i+1) * ldt_0'(X) + (alpha^i+j)* ldt_0'(X)_j   【i is the width of ldt_0(X) matrix，j is the width of ldt_0'(X) matrix】 
-    //      low degree test for reduce_0(X)
-    //     output:
-    //          open_values: trace(zeta), trace(zeta_next)
-    //     fri_input: 
-    //          fri sample challenge point: beta
-    //          trace(beta) + merkle_path
-    //          trace(-beta) + merkle_path
-    //
-    //     ldt_2(X) = Q_1(X) - Q_1(zeta) / (X - zeta)
-    //     ldt_3(X) = Q_2(X) - Q_2(zeta) / (X - zeta)
-    //     compute reduce:
-    //        reduce_1(X) = (alpha^0 * ldt_2(X)_0 ...  alpha^i *ldt_2(X)_i) +(alpha^i+1) *...* ldt_3'(X) + (alpha^i+j+k+l)* ldt_2'(X)_j = 0  【i,j,k,l is the width of ldt_2(X),ldt_2'(X),ldt_3(X),ldt_3'(X)】 
-    //      low degree test for reduce_1(X)
-    //      【actually low_degree_test for vec![reduce_0(X),reduce_1(X)]】
-    //      output:
-    //          open_values: Q_1(zeta), Q_2(zeta),
-    //      fri_input output: 
-    //          fri sample challenge point: beta
-    //          Q_1(beta) + merkle_path
-    //          Q_2(beta) + merkle_path
-    //          Q_1(-beta) + merkle_path
-    //          Q_2(-beta) + merkle_path
-    //  
-    //       low_degree_test proof
-    // 6. output stark proof
-    // 
-    // ====== Query Phase ========
-    // 1. verify trace(X) and Q_1(X) and Q_2(X) at zeta,zeta_next
-    //    verify low-degre test proof
-    //    verify reduce 
-    // 2. evaluation quotient(zeta) at zeta
-    //     calculate zps
-    //     calculate quotient
-    // 3. compute Q(zeta) by trace(zeta), trace(zeta_next)
-    // 4. verify the relationship between Q(zeta) and Q_1(zeta),Q_2(zeta)
+    /*  
+
+    a complete process of uni-stark  
+    assume prover generate sa proof for the below fib-trace and then verifier verifies this proof.
+    fib trace 
+    a b   column 
+    1 2   input0 input1 
+    2 3
+    3 5
+    5 8
+    8 13   output 
+    
+    1. commit trace(X) and get the commitment trace_root
+         lde_trace(X) = lde(trace(X)) 
+         commit lde_trace(X) using Merkletree Commitment and get the trace_commit
+    2. generate quotient poly at coset
+         1 == input0  2==input1              when_first_row 
+         13 == output                        when_last_rot
+         C_0(X) = a(X) + b(X) - b(gX)        when_transition
+         C_1(X) = a(gX) - b(X)               when_transition
+         q_0(X) = C_0(X) / Z_H(X)         
+         q_1(X) = C_1(X) / Z_H(X)
+         degree adjust with alpha and get q_0'(X) and q_1'(X)
+         Q(X) = q_0'(X) + q_1'(X)  domain at coset
+    3. split Q_(X) as Q_1(X) and Q_2(X) through Q(X) = Q_1(X^2) + X*Q_2(X^2)
+    4. commit Q_1(X), Q_2(X) and get the commitment quotient_commit
+         4.1 Low Degree Extension at coset   
+             lde_Q_1(X) = lde(Q_1(X))
+             lde_Q_2(X) = lde(Q_2(X))
+         4.2 Merkle Tree Commitment  
+             places the lde_Q_1(X) and lde_Q_2(X) into a matrix like below sequence and commit the matrix
+             { lde_Q_1(X)_matrix row 0, lde_Q_2(X)_matrix row 0  }
+             { lde_Q_1(X)_matrix row 1, lde_Q_2(X)_matrix row 1  }
+             {                     ......                        }
+             { lde_Q_1(X)_matrix row n, lde_Q_2(X)_matrix row n  }
+             commit this matrix using Merkletree Commitment and get the quotient_commit
+    5. open trace(X) at zeta,zeta_next and open Q_1(X),Q_2(X) at zeta
+       5.1 compute reduce polynomial 
+             ldt_0(X) = (trace(X) - trace(zeta)) / (X - zeta)         
+             ldt_0'(X) = (trace(X) - trace(zeta_next)) / (X - zeta_next)
+             compute reduce polynomail reduce_0(X):
+             reduce_0(X) = (alpha^0 * ldt_0(X)_0 ...+  alpha^i *ldt_0(X)_i) +(alpha^i+1) * ldt_0'(X) + (alpha^i+j)* ldt_0'(X)_j   【i is the width of ldt_0(X) matrix，j is the width of ldt_0'(X) matrix】 
+             low degree test for reduce_0(X):
+    
+             ldt_2(X) = Q_1(X) - Q_1(zeta) / (X - zeta)
+             ldt_3(X) = Q_2(X) - Q_2(zeta) / (X - zeta)
+             compute reduce polynomial reduce_1(X):
+             reduce_1(X) = (alpha^0 * ldt_2(X)_0 ...  alpha^i *ldt_2(X)_i) +(alpha^i+1) *...* ldt_3'(X) + (alpha^i+j+k+l)* ldt_2'(X)_j = 0  【i,j,k,l is the width of ldt_2(X),ldt_2'(X),ldt_3(X),ldt_3'(X)】 
+        
+        5.2 low degree test for reduce polynomial
+             low_degree_test for vec![reduce_0(X),reduce_1(X)]
+        
+        5.3 output
+        reduce_0(X) output:
+             open_values: 
+                 trace(zeta), trace(zeta_next)
+             fri_input proof: 
+                 fri sample challenge point: beta
+                 trace(beta) + merkle_path
+                 trace(-beta) + merkle_path
+         reduce_1(X) output:
+             open_values: 
+                 Q_1(zeta), Q_2(zeta),
+             fri_input proof:
+                 fri sample challenge point: beta
+                 Q_1(beta) + merkle_path
+                 Q_2(beta) + merkle_path
+                 Q_1(-beta) + merkle_path
+                 Q_2(-beta) + merkle_path
+     
+          low_degree_test output:
+             low_degree_test proof
+    6. output stark proof
+    
+    ======= Query Phase ========
+    
+    1. verify the open-values trace(zeta),trace(zeta_next),Q_1(zeta),Q_2(zeta)
+       so the input of this partion is:
+       ***********************************************
+       * reduce random sample values: alpha          *
+       * open values: trace(zeta)  trace(zeta_next)  *
+       * open values: trace(zeta) trace(zeta_next)   *
+       * fri challenge point: beta                   * 
+       * merkle path: trace_root MPT(trace(beta))  MPT(trace(-beta)) *
+       * merkle path: quotient_root MPT(Q_1(beta))   MPT(Q_1(-beta)) MPT(Q_2(beta))   MPT(Q_1(-beta))*
+       * fri_low_degree_test proof                   *
+       ***********************************************
+       1.1 verify trace(zeta),trace(zeta_next) is the trace(X) evaluates at zeta and zeta_next point
+            ldt_0(beta) = trace(beta) - trace(zeta) / (beat - zeta)      
+            ldt_0'(beta) = trace(beta) - trace(zeta_next) / (beta - zeta_next)
+            reduce_0(beta) = (alpha^0 * ldt_0(beta)_0 ...+  alpha^i *ldt_0(beta)_i) +(alpha^i+1) * ldt_0'(beta) + (alpha^i+j)* ldt_0'(beta)_j
+       1.2 verify Q_1(zeta),Q_2(zeta) is the Q_1(X) and Q_2(X) evaluates at zeta point
+            ldt_2(beta) = Q_1(beta) - Q_1(zeta) / (beta - zeta)
+            ldt_3(beta) = Q_2(beta) - Q_2(zeta) / (beta - zeta)
+            reduce_1(beta) = (alpha^0 * ldt_2(beta)_0 ...  alpha^i *ldt_2(beta)_i) +(alpha^i+1) *...* ldt_3'(beta) + (alpha^i+j+k+l)* ldt_2'(beta)_j
+       1.3 verify low_degree_test_proof for vec![reduce_0(beta) and reduce_1(beta)]
+       1.4 we need to notice that a compelete FRI Query phase is component with multiple query, 
+           and for each query the verifier samples a new point so-called beta to challenge the 
+           commited poly which leads to the steps of 1.1,1.2,1.3 is repeated for each challenge
+    2. evaluate the committed Q(X) at zeta
+        calculate zps
+        calculate quotient
+    3. compute Q(zeta) by trace(zeta), trace(zeta_next)
+    4. verify the relationship between Q(zeta) and Q_1(zeta),Q_2(zeta)
+    */
+
     #[cfg(debug_assertions)]
     crate::check_constraints::check_constraints(air, &trace, public_values);
 
@@ -133,8 +175,6 @@ where
 
     let trace_on_quotient_domain = pcs.get_evaluations_on_domain(&trace_data, 0, quotient_domain);
 
-    // Question: How to dinstict the Quotient_domain and the trace_domain?
-    // 隐含了一个调整degree的过程？
     let quotient_values = quotient_values(
         air,
         public_values,
