@@ -42,12 +42,12 @@ where
     a complete process of uni-stark  
     assume prover generate sa proof for the below fib-trace and then verifier verifies this proof.
     fib trace 
-    a b   column 
-    1 2   input0 input1 
-    2 3
-    3 5
-    5 8
-    8 13   output 
+    a(x)   b(x)   column 
+    1       2   input0 input1 
+    2       3
+    3       5
+    5       8
+    8       13   output 
     
     1. commit trace(X) and get the commitment trace_root
          lde_trace(X) = lde(trace(X)) 
@@ -173,6 +173,7 @@ where
     let quotient_domain =
         trace_domain.create_disjoint_domain(1 << (log_degree + log_quotient_degree));
 
+    // 这里拿到的是 trace_lde 
     let trace_on_quotient_domain = pcs.get_evaluations_on_domain(&trace_data, 0, quotient_domain);
 
     let quotient_values = quotient_values(
@@ -183,12 +184,12 @@ where
         trace_on_quotient_domain,
         alpha,
     );
-    let quotient_flat = RowMajorMatrix::new_col(quotient_values).flatten_to_base();
+    let quotient_flat = RowMajorMatrix::new_col(quotient_values).flatten_to_base();// 把一个一列的extension的matrix看成4列的base matrix 
 
     // let quotient_chunk_size = 1 << (log_degree + log_quotient_degree) / 1 << log_quotient_degree = 1 << log_degree
     // let quotient_degree = 1 << log_quotient_degree;
     // Question: Why need to split domain and evals?
-    let quotient_chunks = quotient_domain.split_evals(quotient_degree, quotient_flat);// 隐含了一个调整degree的过程？
+    let quotient_chunks = quotient_domain.split_evals(quotient_degree, quotient_flat);
     
     // 1,2,3,4,5,6,7,8,9,10,11,12 M - evaluation at [1..12]
     // domain F_13 (generator 2) 
@@ -212,7 +213,7 @@ where
 
     let (opened_values, opening_proof) = pcs.open(
         vec![
-            (&trace_data, vec![vec![zeta, zeta_next]]), // why the first element different the second element?
+            (&trace_data, vec![vec![zeta, zeta_next]]),
             (
                 &quotient_data,
                 // open every chunk at zeta
