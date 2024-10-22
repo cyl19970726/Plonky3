@@ -81,6 +81,40 @@ pub fn yu_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usiz
     folded_poly
 }
 
+pub fn fold_poly_with_dft<F: TwoAdicField>;(poly: Vec<F>;, beta: F, folding_factor: usize) ->; Vec<F>; {
+    assert!(poly.len() % folding_factor == 0, "The length of the poly must be divisible by the folding factor");
+
+    let m = RowMajorMatrix::new(poly, folding_factor);
+
+    let g_inv = F::two_adic_generator(log2_strict_usize(m.height()) + log2_strict_usize(folding_factor)).inverse();
+
+    //beta * g_inv^i
+    let mut xs = g_inv
+        .shifted_powers(beta)
+        .take(m.height())
+        .collect_vec();
+
+    reverse_slice_index_bits(&mut xs);
+
+    let dft = Radix2Dit::default();
+
+    // Parallel processing and caching beta powers
+    let mut row_count = 0;
+    m.row_slices().map(|row| {
+        let mut row_evals = row.to_vec();
+        reverse_slice_index_bits(&mut row_evals);
+
+        let row_coeff = dft.idft(row_evals.clone());
+
+        let x = xs[row_count];
+        row_count += 1;
+
+        row_coeff.iter().enumerate().fold(F::zero(), |acc, (power, coeff)| {
+            acc + (*coeff * x.exp_u64(power as u64))
+        })
+    }).collect::<Vec<F>;>;()
+}
+
 
 fn fold_row<F: TwoAdicField>(
     index: usize,
@@ -256,6 +290,48 @@ mod tests {
 
         folded = fold_poly(folded, beta,folding_factor);
         assert_eq!(folded[sample_index],multi_fold_row_res);
+        reverse_slice_index_bits(&mut folded);
+
+        assert_eq!(expected, folded);   
+    }
+
+    #[test]
+    fn test_fold_poly_dft(){
+        type F = BabyBear;
+
+        let mut rng = thread_rng();
+        let folding_factor = 4;
+
+        let log_n = 4;
+        let n = 1 << log_n;
+        let coeffs = (0..n).map(|_| rng.gen::<F>()).collect::<Vec<_>>();
+
+        let dft = Radix2Dit::default();
+        let evals = dft.dft(coeffs.clone());
+
+        let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
+        let new_degree  = p_0_coeffs.len();
+        let p_0_evals = dft.dft(p_0_coeffs);
+        
+        let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
+        let p_1_evals = dft.dft(p_1_coeffs);
+
+        let p_2_coeffs = coeffs.iter().cloned().skip(2).step_by(folding_factor).collect_vec();
+        let p_2_evals = dft.dft(p_2_coeffs);
+
+        let p_3_coeffs = coeffs.iter().cloned().skip(3).step_by(folding_factor).collect_vec();
+        let p_3_evals = dft.dft(p_3_coeffs);
+
+        let beta = rng.gen::<F>();
+        let expected = izip!(p_0_evals, p_1_evals, p_2_evals, p_3_evals)
+            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
+            .collect::<Vec<_>>();
+
+        // fold_even_odd takes and returns in bitrev order.
+        let mut folded = evals;
+        reverse_slice_index_bits(&mut folded);
+
+        folded = fold_poly_with_dft(folded, beta, folding_factor);
         reverse_slice_index_bits(&mut folded);
 
         assert_eq!(expected, folded);   
