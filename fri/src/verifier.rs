@@ -133,7 +133,7 @@ where
 
         index = index_pair;
 
-        folded_eval = g.fold_row(index, log_folded_height, beta, evals.into_iter());
+        folded_eval = g.fold_row(index, log_folded_height, beta, evals.into_iter(),config.folding_factor);
     }
 
     debug_assert!(index < config.blowup(), "index was {}", index);

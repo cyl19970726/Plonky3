@@ -7,6 +7,7 @@ use p3_matrix::Matrix;
 #[derive(Debug)]
 pub struct FriConfig<M> {
     pub log_blowup: usize,
+    pub folding_factor: usize,
     pub num_queries: usize,
     pub proof_of_work_bits: usize,
     pub mmcs: M,
@@ -46,8 +47,9 @@ pub trait FriGenericConfig<F: Field> {
         log_height: usize,
         beta: F,
         evals: impl Iterator<Item = F>,
+        folding_factor: usize,
     ) -> F;
 
     /// Same as applying fold_row to every row, possibly faster.
-    fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M) -> Vec<F>;
+    fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M, folding_factor: usize) -> Vec<F>;
 }

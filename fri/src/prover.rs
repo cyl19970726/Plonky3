@@ -1,6 +1,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use core::iter;
+use core::{iter, marker::PhantomData};
 
 use itertools::{izip, Itertools};
 use p3_challenger::{CanObserve, FieldChallenger, GrindingChallenger};
@@ -10,13 +10,62 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_util::log2_strict_usize;
 use tracing::{info_span, instrument};
 
-use crate::{CommitPhaseProofStep, FriConfig, FriGenericConfig, FriProof, QueryProof};
+use crate::{CommitPhaseProofStep, FriConfig, FriGenericConfig, FriProof, LdtProver, QueryProof};
 
+struct FriProver<G, Val, Challenge, M, Challenger> 
+where
+    Val: Field,
+    Challenge: ExtensionField<Val>,
+    M: Mmcs<Challenge>,
+    Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
+    G: FriGenericConfig<Challenge>
+{
+    g: G,
+    _marker: PhantomData<(Val,M,Challenger,Challenge)>
+}
+
+impl <G, Val, Challenge, M, Challenger>  LdtProver<G,Val,Challenge,M,Challenger>  for FriProver<G,Val,Challenge,M,Challenger> 
+where 
+    Val: Field,
+    Challenge: ExtensionField<Val>,
+    M: Mmcs<Challenge>,
+    Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
+    G: FriGenericConfig<Challenge>
+{
+    type Proof = FriProof<Challenge,M, Challenger::Witness, G::InputProof>;
+
+    fn new(g: G) -> Self{
+        Self{
+            g,
+            _marker: PhantomData,
+        }
+    }
+
+    fn folding_factor(&self) -> usize {
+        2
+    }
+
+    fn prove(&self,   
+            g: &G,
+            config: &FriConfig<M>,
+            inputs: Vec<Vec<Challenge>>,
+            challenger: &mut Challenger,
+            open_input: impl Fn(usize) -> G::InputProof
+        ) -> Self::Proof {
+        prove(g, config, inputs, challenger, open_input)    
+    }
+}
+
+// polynomial commitment 
+// PCS 接口 
+// FRI --> query_nums 0..16 
+//  for  0...16 { n degree fold into const } 
+// Stir  F --> Fold  --> g_poly --> query_num --> 计算挑战点 r_out, r_shift --> g_poly eval --> ans(x) --> shake_poly --> quotient(x) --> degree_correct --> next f 
 #[instrument(name = "FRI prover", skip_all)]
 pub fn prove<G, Val, Challenge, M, Challenger>(
     g: &G,
     config: &FriConfig<M>,
-    inputs: Vec<Vec<Challenge>>,
+    inputs: Vec<Vec<Challenge>>, // 2 4 8 16     // 16 4 
     challenger: &mut Challenger,
     open_input: impl Fn(usize) -> G::InputProof,
 ) -> FriProof<Challenge, M, Challenger::Witness, G::InputProof>
@@ -87,14 +136,14 @@ where
     let mut data = vec![];
 
     while folded.len() > config.blowup() {
-        let leaves = RowMajorMatrix::new(folded, 2);
+        let leaves = RowMajorMatrix::new(folded, config.folding_factor);
         let (commit, prover_data) = config.mmcs.commit_matrix(leaves);
         challenger.observe(commit.clone());
 
         let beta: Challenge = challenger.sample_ext_element();
         // We passed ownership of `current` to the MMCS, so get a reference to it
         let leaves = config.mmcs.get_matrices(&prover_data).pop().unwrap();
-        folded = g.fold_matrix(beta, leaves.as_view());
+        folded = g.fold_matrix(beta, leaves.as_view(),config.folding_factor);
 
         commits.push(commit);
         data.push(prover_data);
@@ -132,9 +181,10 @@ where
         .iter()
         .enumerate()
         .map(|(i, commit)| {
+            // todo: apply folding factor 
             let index_i = index >> i;
             let index_i_sibling = index_i ^ 1;
-            let index_pair = index_i >> 1;
+            let index_pair = index_i >> 1; // >> log_K
 
             let (mut opened_rows, opening_proof) = config.mmcs.open_batch(index_pair, commit);
             assert_eq!(opened_rows.len(), 1);

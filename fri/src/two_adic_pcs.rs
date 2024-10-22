@@ -74,9 +74,10 @@ impl<F: TwoAdicField, InputProof, InputError: Debug> FriGenericConfig<F>
         log_height: usize,
         beta: F,
         evals: impl Iterator<Item = F>,
+        folding_factor: usize,
     ) -> F {
-        let arity = 2;
-        let log_arity = 1;
+        let arity = folding_factor;
+        let log_arity = log2_strict_usize(folding_factor);
         let (e0, e1) = evals
             .collect_tuple()
             .expect("TwoAdicFriFolder only supports arity=2");
@@ -90,12 +91,13 @@ impl<F: TwoAdicField, InputProof, InputError: Debug> FriGenericConfig<F>
             .take(arity)
             .collect_vec();
         reverse_slice_index_bits(&mut xs);
-        assert_eq!(log_arity, 1, "can only interpolate two points for now");
+        // assert_eq!(log_arity, 1, "can only interpolate two points for now");
+        // assert_eq!(xs.len(),evals.try_len().expect("error evals"));
         // interpolate and evaluate at beta
         e0 + (beta - xs[0]) * (e1 - e0) / (xs[1] - xs[0])
     }
 
-    fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M) -> Vec<F> {
+    fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M, folding_factor: usize) -> Vec<F> {
         // We use the fact that
         //     p_e(x^2) = (p(x) + p(-x)) / 2
         //     p_o(x^2) = (p(x) - p(-x)) / (2 x)
