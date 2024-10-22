@@ -8,11 +8,11 @@ use p3_commit::Mmcs;
 use p3_field::{ExtensionField, Field};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_util::log2_strict_usize;
-use tracing::{info_span, instrument};
+use tracing::{info, info_span, instrument};
 
 use crate::{CommitPhaseProofStep, FriConfig, FriGenericConfig, FriProof, LdtProver, QueryProof};
 
-struct FriProver<G, Val, Challenge, M, Challenger> 
+pub struct FriProver<'a,G, Val, Challenge, M, Challenger> 
 where
     Val: Field,
     Challenge: ExtensionField<Val>,
@@ -20,11 +20,11 @@ where
     Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
     G: FriGenericConfig<Challenge>
 {
-    g: G,
-    _marker: PhantomData<(Val,M,Challenger,Challenge)>
+    config: &'a FriConfig<M>,
+    _marker: PhantomData<(G,Val,M,Challenger,Challenge)>
 }
 
-impl <G, Val, Challenge, M, Challenger>  LdtProver<G,Val,Challenge,M,Challenger>  for FriProver<G,Val,Challenge,M,Challenger> 
+impl <'a,G, Val, Challenge, M, Challenger>  LdtProver<'a,G,Val,Challenge,M,Challenger>  for FriProver<'a,G,Val,Challenge,M,Challenger> 
 where 
     Val: Field,
     Challenge: ExtensionField<Val>,
@@ -34,26 +34,45 @@ where
 {
     type Proof = FriProof<Challenge,M, Challenger::Witness, G::InputProof>;
 
-    fn new(g: G) -> Self{
+    fn new(config: &'a FriConfig<M>) -> Self{
         Self{
-            g,
+            config,
             _marker: PhantomData,
         }
     }
 
     fn folding_factor(&self) -> usize {
-        2
+        self.config.folding_factor
     }
 
     fn prove(&self,   
             g: &G,
-            config: &FriConfig<M>,
             inputs: Vec<Vec<Challenge>>,
             challenger: &mut Challenger,
             open_input: impl Fn(usize) -> G::InputProof
         ) -> Self::Proof {
-        prove(g, config, inputs, challenger, open_input)    
+        prove(g, self.config, inputs, challenger, open_input)    
     }
+}
+
+/// This function checks if a given `value` is a power of `k`.
+/// It returns `true` if `value` is a power of `k`, otherwise `false`.
+fn is_power_of_k(mut value: usize, k: usize) -> bool {
+    // Edge case: k must be greater than 1, otherwise any value is trivially a power of 1.
+    if k < 2 {
+        return value == 1;
+    }
+
+    // Continuously divide the value by k as long as it's divisible by k
+    while value > 1 {
+        if value % k != 0 {
+            return false;
+        }
+        value /= k;
+    }
+
+    // If we've divided all the way down to 1, then it's a power of k.
+    value == 1
 }
 
 // polynomial commitment 
@@ -83,6 +102,13 @@ where
         .all(|(l, r)| l.len() >= r.len()));
 
     let log_max_height = log2_strict_usize(inputs[0].len());
+
+    // make sure that the degree of inputs is the power of folding_factor 
+    inputs.iter().for_each(|poly|{
+        info!("poly_len: {:?}",poly.len());
+        assert!(is_power_of_k(poly.len(), config.folding_factor));
+        
+    });
 
     let commit_phase_result = commit_phase(g, config, inputs, challenger);
 
@@ -178,22 +204,25 @@ where
     M: Mmcs<F>,
 {
     commit_phase_commits
-        .iter()
+        .iter() 
         .enumerate()
         .map(|(i, commit)| {
             // todo: apply folding factor 
             let index_i = index >> i;
-            let index_i_sibling = index_i ^ 1;
-            let index_pair = index_i >> 1; // >> log_K
+            // let index_i_sibling = index_i ^ 1;
+            let leaf_index = index_i >> config.folding_factor; // >> log_K
 
-            let (mut opened_rows, opening_proof) = config.mmcs.open_batch(index_pair, commit);
+            let (mut opened_rows, opening_proof) = config.mmcs.open_batch(leaf_index, commit);
             assert_eq!(opened_rows.len(), 1);
             let opened_row = opened_rows.pop().unwrap();
-            assert_eq!(opened_row.len(), 2, "Committed data should be in pairs");
-            let sibling_value = opened_row[index_i_sibling % 2];
+            assert_eq!(opened_row.len(), config.folding_factor, "the number of committed data should be euqal to folding_factor");
 
+            // modify the CommitPhaseProofStep
+            // let sibling_value = opened_row[index_i_sibling % 2];
+
+            // Notice: we modify the CommitPhaseProofStep here
             CommitPhaseProofStep {
-                sibling_value,
+                opened_row,
                 opening_proof,
             }
         })

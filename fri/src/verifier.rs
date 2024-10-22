@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -7,8 +9,50 @@ use p3_commit::Mmcs;
 use p3_field::{ExtensionField, Field};
 use p3_matrix::Dimensions;
 
-use crate::{CommitPhaseProofStep, FriConfig, FriGenericConfig, FriProof};
+use crate::{CommitPhaseProofStep, FriConfig, FriGenericConfig, FriProof, LdtVerifer};
 
+pub struct Verifier<'a,G, Val, Challenge, M, Challenger>
+where
+    Val: Field,
+    Challenge: ExtensionField<Val>,
+    M: Mmcs<Challenge>,
+    Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
+    G: FriGenericConfig<Challenge>,
+{
+    config: &'a FriConfig<M>,
+    _marker: PhantomData<(G,Val,Challenger,Challenge)>,   
+}
+
+impl <'a,G, Val, Challenge, M, Challenger> LdtVerifer<'a,G,Val,Challenge,M,Challenger>for Verifier<'a,G, Val, Challenge, M, Challenger>
+where
+    Val: Field,
+    Challenge: ExtensionField<Val>,
+    M: Mmcs<Challenge>,
+    Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
+    G: FriGenericConfig<Challenge>,
+{
+    type Proof = FriProof<Challenge, M, Challenger::Witness, G::InputProof>;
+    fn folding_factor(&self) -> usize {
+        self.config.folding_factor
+    }
+
+    fn new(config: &'a FriConfig<M>) -> Self {
+        Self{
+            config,
+            _marker: PhantomData,
+        }
+    }
+
+    fn verify(
+            &self,
+            g: &G,
+            proof: &Self::Proof,
+            challenger: &mut Challenger,
+            open_input: impl Fn(usize, &G::InputProof) -> Result<Vec<(usize, Challenge)>, G::InputError>,
+        ) -> Result<(),FriError<M::Error, G::InputError>> {
+        verify(g, self.config, proof, challenger, open_input)
+    }
+}
 #[derive(Debug)]
 pub enum FriError<CommitMmcsErr, InputError> {
     InvalidProofShape,
@@ -104,20 +148,37 @@ where
 {
     let mut folded_eval = F::zero();
     let mut ro_iter = reduced_openings.into_iter().peekable();
-
+    let mut times = 0;
     for (log_folded_height, (&beta, comm, opening)) in izip!((0..log_max_height).rev(), steps) {
         if let Some((_, ro)) = ro_iter.next_if(|(lh, _)| *lh == log_folded_height + 1) {
             folded_eval += ro;
         }
 
-        let index_sibling = index ^ 1;
-        let index_pair = index >> 1;
+        tracing::info!("verifier query times {:?}",times);
+        times += 1;
 
-        let mut evals = vec![folded_eval; 2];
-        evals[index_sibling % 2] = opening.sibling_value;
+        // let index_sibling = index ^ 1;
+        let index_pair = index >> config.folding_factor;
+
+        // check the folded_eval from the leaf        
+        // let mut evals = vec![folded_eval; 2];
+        let mut valid_folded_value = false;
+        let mut open_point_index = 0;
+        let opening_row = opening.opened_row.clone();
+        for i in 0..opening_row.len(){
+            if opening_row[i] == folded_eval{
+                valid_folded_value = true;
+                open_point_index = i;
+                break;
+            }
+        }
+        
+        assert!(valid_folded_value);
+
+        // evals[index_sibling % 2] = opening.sibling_value;
 
         let dims = &[Dimensions {
-            width: 2,
+            width: config.folding_factor,
             height: 1 << log_folded_height,
         }];
         config
@@ -126,14 +187,14 @@ where
                 comm,
                 dims,
                 index_pair,
-                &[evals.clone()],
+                &[opening_row.clone()],
                 &opening.opening_proof,
             )
             .map_err(FriError::CommitPhaseMmcsError)?;
 
         index = index_pair;
 
-        folded_eval = g.fold_row(index, log_folded_height, beta, evals.into_iter(),config.folding_factor);
+        folded_eval = g.fold_row(index, log_folded_height, beta, opening_row.into_iter(),config.folding_factor);
     }
 
     debug_assert!(index < config.blowup(), "index was {}", index);
