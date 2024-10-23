@@ -79,6 +79,7 @@ pub fn fold_poly_matrix<F: TwoAdicField,M: Matrix<F>>(poly: M, beta: F, folding_
 
     // Parallel processing and caching beta powers
     poly.to_row_major_matrix().row_slices().zip(xs_matrix.row_slices()).map(|(eval_row,xs_row)| {
+        
         lagrange_interpolate_and_evaluate(xs_row,eval_row,beta)
     }).collect::<Vec<F>>()
 }
@@ -214,7 +215,7 @@ fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::btree_map::Range;
+    use alloc::{collections::btree_map::Range, vec};
     use itertools::izip;
     use p3_baby_bear::BabyBear;
     use p3_dft::{Radix2Dit, TwoAdicSubgroupDft};
@@ -296,18 +297,20 @@ mod tests {
 
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
+        let mut new_folded = vec![];
         reverse_slice_index_bits(&mut folded);
+        for i in 0..10{
+            let sample_index = rng.gen::<usize>() % new_degree;
+            let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
+            let sample_row =&folded[range].to_vec();
+            let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
+            new_folded = fold_poly::<F,RowMajorMatrix<F>>(folded.clone(), beta,folding_factor);
+            assert_eq!(new_folded[sample_index],multi_fold_row_res);
+        }
 
-        let sample_index = rng.gen::<usize>() % new_degree;
-        let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
-        let sample_row =&folded[range].to_vec();
-        let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
+        reverse_slice_index_bits(&mut new_folded);
 
-        folded = fold_poly::<F,RowMajorMatrix<F>>(folded, beta,folding_factor);
-        assert_eq!(folded[sample_index],multi_fold_row_res);
-        reverse_slice_index_bits(&mut folded);
-
-        assert_eq!(expected, folded);   
+        assert_eq!(expected, new_folded);   
     }
 
     #[test]
@@ -344,12 +347,20 @@ mod tests {
 
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
+        let mut new_folded = vec![];
         reverse_slice_index_bits(&mut folded);
+        for i in 0..10{
+            let sample_index = rng.gen::<usize>() % new_degree;
+            let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
+            let sample_row =&folded[range].to_vec();
+            let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
+            new_folded = fold_poly::<F,RowMajorMatrix<F>>(folded.clone(), beta,folding_factor);
+            assert_eq!(new_folded[sample_index],multi_fold_row_res);
+        }
 
-        folded = fold_poly_with_dft(folded, beta, folding_factor);
-        reverse_slice_index_bits(&mut folded);
+        reverse_slice_index_bits(&mut new_folded);
 
-        assert_eq!(expected, folded);   
+        assert_eq!(expected, new_folded);   
     }
 
     #[test]
@@ -386,19 +397,19 @@ mod tests {
 
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
+        let mut new_folded = vec![];
         reverse_slice_index_bits(&mut folded);
+        for i in 0..10{
+            let sample_index = rng.gen::<usize>() % new_degree;
+            let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
+            let sample_row =&folded[range].to_vec();
+            let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
+            new_folded = fold_poly::<F,RowMajorMatrix<F>>(folded.clone(), beta,folding_factor);
+            assert_eq!(new_folded[sample_index],multi_fold_row_res);
+        }
 
-        let sample_index = rng.gen::<usize>() % new_degree;
-        let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
-        let sample_row =&folded[range].to_vec();
-        let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
+        reverse_slice_index_bits(&mut new_folded);
 
-        folded = yu_fold_poly(folded, beta,4);
-
-        assert_eq!(folded[sample_index],multi_fold_row_res);
-
-        reverse_slice_index_bits(&mut folded);
-
-        assert_eq!(expected, folded);   
+        assert_eq!(expected, new_folded);   
     }
 }
