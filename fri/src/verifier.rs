@@ -150,6 +150,7 @@ where
     let mut ro_iter = reduced_openings.into_iter().peekable();
     let mut times = 0;
     for (log_folded_height, (&beta, comm, opening)) in izip!((0..log_max_height).rev(), steps) {
+        tracing::info!("prev_folded_eval {:?}",folded_eval);
         if let Some((_, ro)) = ro_iter.next_if(|(lh, _)| *lh == log_folded_height + 1) {
             folded_eval += ro;
         }
@@ -158,17 +159,19 @@ where
         times += 1;
 
         // let index_sibling = index ^ 1;
-        let index_pair = index >> config.folding_factor;
+        let index_pair = index >> config.log_folding_factor;
 
         // check the folded_eval from the leaf        
         // let mut evals = vec![folded_eval; 2];
         let mut valid_folded_value = false;
-        let mut open_point_index = 0;
+        // let mut open_point_index = 0;
         let opening_row = opening.opened_row.clone();
+        tracing::info!("opening_row{:?}",opening_row);
+        tracing::info!("folded_eval {:?}",folded_eval);
         for i in 0..opening_row.len(){
             if opening_row[i] == folded_eval{
                 valid_folded_value = true;
-                open_point_index = i;
+                // open_point_index = i;
                 break;
             }
         }

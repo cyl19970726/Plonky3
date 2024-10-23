@@ -8,6 +8,7 @@ use p3_matrix::Matrix;
 pub struct FriConfig<M> {
     pub log_blowup: usize,
     pub folding_factor: usize,
+    pub log_folding_factor: usize,
     pub num_queries: usize,
     pub proof_of_work_bits: usize,
     pub mmcs: M,

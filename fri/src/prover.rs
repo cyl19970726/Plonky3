@@ -57,7 +57,7 @@ where
 
 /// This function checks if a given `value` is a power of `k`.
 /// It returns `true` if `value` is a power of `k`, otherwise `false`.
-fn is_power_of_k(mut value: usize, k: usize) -> bool {
+pub fn is_power_of_k(mut value: usize, k: usize) -> bool {
     // Edge case: k must be greater than 1, otherwise any value is trivially a power of 1.
     if k < 2 {
         return value == 1;
@@ -210,7 +210,7 @@ where
             // todo: apply folding factor 
             let index_i = index >> i;
             // let index_i_sibling = index_i ^ 1;
-            let leaf_index = index_i >> config.folding_factor; // >> log_K
+            let leaf_index = index_i >> config.log_folding_factor; // >> log_K
 
             let (mut opened_rows, opening_proof) = config.mmcs.open_batch(leaf_index, commit);
             assert_eq!(opened_rows.len(), 1);
