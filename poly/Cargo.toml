@@ -1,0 +1,15 @@
+[package]
+name = "poly"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+p3-dft = { path = "../dft" }
+p3-field = { path = "../field" }
+p3-interpolation = { path = "../interpolation" }
+p3-matrix = { path = "../matrix" }
+p3-util ={ path = "../util"}
+[dev-dependencies]
+p3-baby-bear = { path = "../baby-bear" }
+rand = "0.8.5"
+rand_chacha = "0.3.1"

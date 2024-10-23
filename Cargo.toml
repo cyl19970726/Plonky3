@@ -30,7 +30,7 @@ members = [
     "sha256",
     "symmetric",
     "util",
-    "uni-stark",
+    "uni-stark", "poly",
 ]
 
 [profile.profiling]
