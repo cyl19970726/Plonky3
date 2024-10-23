@@ -89,12 +89,21 @@ where
             .iter()
             .map(|matrix| {
                 let log2_height = log2_ceil_usize(matrix.height());
+                println!("matrix height:{:?}", matrix.height());
                 let bits_reduced = log_max_height - log2_height;
-                let reduced_index = index >> bits_reduced;
+                println!("bits_reduced:{:?}", bits_reduced);
+                //TODO: chanege 2 to log_folding_factor
+                let reduced_index = index >> (1 * bits_reduced);
+                println!("reduced_index:{:?}", reduced_index);
+                
+                println!("matrix width:{:?}", matrix.width());
+
                 matrix.row(reduced_index).collect()
             })
             .collect_vec();
-
+            
+        println!("prover_data.digest_layers[0].len:{:?}", prover_data.digest_layers[0].len());
+        //TODO:fix?
         let proof: Vec<_> = (0..log_max_height)
             .map(|i| prover_data.digest_layers[i][(index >> i) ^ 1])
             .collect();

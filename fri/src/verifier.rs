@@ -95,7 +95,9 @@ where
         return Err(FriError::InvalidPowWitness);
     }
 
-    let log_max_height = proof.commit_phase_commits.len() + config.log_blowup;
+    let log_max_height = proof.commit_phase_commits.len() * config.log_folding_factor + config.log_blowup;
+
+    tracing::info!("verifier log_max_height {:?}",log_max_height);
 
     for qp in &proof.query_proofs {
         let index = challenger.sample_bits(log_max_height + g.extra_query_index_bits());
@@ -148,10 +150,16 @@ where
 {
     let mut folded_eval = F::zero();
     let mut ro_iter = reduced_openings.into_iter().peekable();
+    for i in ro_iter.clone() {
+        tracing::info!("ro_iter {:?}",i);
+    }
     let mut times = 0;
-    for (log_folded_height, (&beta, comm, opening)) in izip!((0..log_max_height).rev(), steps) {
+    for (log_folded_height, (&beta, comm, opening)) in izip!((0..(log_max_height - (config.log_folding_factor - 1))).rev().step_by(config.log_folding_factor), steps) {
+        tracing::info!("verifier log_max_height {:?}", log_max_height);
         tracing::info!("prev_folded_eval {:?}",folded_eval);
-        if let Some((_, ro)) = ro_iter.next_if(|(lh, _)| *lh == log_folded_height + 1) {
+        tracing::info!("log_folded_height {:?}",log_folded_height);
+        if let Some((_, ro)) = ro_iter.next_if(|(lh, _)| *lh == log_folded_height + config.log_folding_factor) {
+            tracing::info!("ro:{:?}", ro);
             folded_eval += ro;
         }
 
@@ -166,8 +174,10 @@ where
         let mut valid_folded_value = false;
         // let mut open_point_index = 0;
         let opening_row = opening.opened_row.clone();
+
         tracing::info!("opening_row{:?}",opening_row);
         tracing::info!("folded_eval {:?}",folded_eval);
+
         for i in 0..opening_row.len(){
             if opening_row[i] == folded_eval{
                 valid_folded_value = true;

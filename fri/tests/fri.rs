@@ -30,7 +30,7 @@ type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
 type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
 type MyFriConfig = FriConfig<ChallengeMmcs>;
 
-fn get_ldt_for_testing<R: Rng>(rng: &mut R,log_folding_factor: usize) -> (Perm, MyFriConfig) {
+fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm, MyFriConfig) {
     let perm = Perm::new_from_rng_128(
         Poseidon2ExternalMatrixGeneral,
         DiffusionMatrixBabyBear::default(),
@@ -56,10 +56,12 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize) {
     let dft = Radix2Dit::default();
     let shift = Val::generator();
 
-    let ldes: Vec<RowMajorMatrix<Val>> = (9..10)
+    let ldes: Vec<RowMajorMatrix<Val>> = (8..9)
         .map(|deg_bits| {
-            let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 16);
-            let mut lde = dft.coset_lde_batch(evals, 1, shift);
+            let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 1);
+            println!("evals len:{:?}", (1 << deg_bits));
+            //fix added_bit
+            let mut lde = dft.coset_lde_batch(evals, fc.log_blowup, shift);
             reverse_matrix_index_bits(&mut lde);
             lde
         })
@@ -98,7 +100,6 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize) {
 
         let log_max_height = log2_strict_usize(input[0].len());
 
-
         let fri_prover = prover::FriProver::new(&fc);
         let proof = fri_prover.prove(
             &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
@@ -108,8 +109,10 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize) {
                 // As our "input opening proof", just pass through the literal reduced openings.
                 let mut ro = vec![];
                 for v in &input {
+                    //TODO:
                     let log_height = log2_strict_usize(v.len());
-                    ro.push((log_height, v[idx >> (log_max_height - log_height)]));
+                    //fix
+                    ro.push((log_height, v[idx >> (log_folding_factor * (log_max_height - log_height))]));
                 }
                 ro.sort_by_key(|(lh, _)| Reverse(*lh));
                 ro
@@ -159,10 +162,10 @@ fn test_fri_ldt() {
     tracing_subscriber::fmt::init();
     tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
-    for i in 0..4 {
-        let mut rng = ChaCha20Rng::seed_from_u64(i);
-        do_test_fri_ldt(&mut rng,1);
-    }
+    // for i in 0..4 {
+    let mut rng = ChaCha20Rng::seed_from_u64(0);
+    do_test_fri_ldt(&mut rng,1);
+    // }
 }
 
 

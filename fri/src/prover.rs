@@ -105,7 +105,8 @@ where
 
     // make sure that the degree of inputs is the power of folding_factor 
     inputs.iter().for_each(|poly|{
-        info!("poly_len: {:?}",poly.len());
+        info!("poly_len: {:?}", poly.len());
+
         assert!(is_power_of_k(poly.len(), config.folding_factor));
         
     });
@@ -208,11 +209,19 @@ where
         .enumerate()
         .map(|(i, commit)| {
             // todo: apply folding factor 
-            let index_i = index >> i;
+            println!("i:{:?}", i);
+            // println!("log_folding_factor:{:?}", config.log_folding_factor);
+
+            //fix index_i = index / (folding_factor^i)
+
+            let index_i = index >> (config.log_folding_factor * i);
+            println!("index_i:{}", index_i);
             // let index_i_sibling = index_i ^ 1;
             let leaf_index = index_i >> config.log_folding_factor; // >> log_K
+            println!("leaf_index:{}", leaf_index);
 
             let (mut opened_rows, opening_proof) = config.mmcs.open_batch(leaf_index, commit);
+
             assert_eq!(opened_rows.len(), 1);
             let opened_row = opened_rows.pop().unwrap();
             assert_eq!(opened_row.len(), config.folding_factor, "the number of committed data should be euqal to folding_factor");
