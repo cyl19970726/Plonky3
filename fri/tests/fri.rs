@@ -56,7 +56,8 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize) {
     let dft = Radix2Dit::default();
     let shift = Val::generator();
 
-    let ldes: Vec<RowMajorMatrix<Val>> = (8..9)
+    let degrees = vec![8,10];
+    let ldes: Vec<RowMajorMatrix<Val>> = degrees.iter()
         .map(|deg_bits| {
             let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 1);
             println!("evals len:{:?}", (1 << deg_bits));
