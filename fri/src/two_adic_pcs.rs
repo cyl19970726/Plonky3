@@ -22,8 +22,9 @@ use p3_util::{log2_strict_usize, reverse_bits_len, reverse_slice_index_bits, Vec
 use serde::{Deserialize, Serialize};
 use tracing::{info_span, instrument};
 
+use crate::fold_even_odd::{yu_fold_poly,multi_fold_row,fold_poly};
 use crate::verifier::{self, FriError};
-use crate::{prover, FriConfig, FriGenericConfig, FriProof};
+use crate::{fold_poly_matrix, prover, FriConfig, FriGenericConfig, FriProof};
 
 #[derive(Debug)]
 pub struct TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs> {
@@ -76,58 +77,11 @@ impl<F: TwoAdicField, InputProof, InputError: Debug> FriGenericConfig<F>
         evals: impl Iterator<Item = F>,
         folding_factor: usize,
     ) -> F {
-        let arity = folding_factor;
-        let log_arity = log2_strict_usize(folding_factor);
-        let (e0, e1) = evals
-            .collect_tuple()
-            .expect("TwoAdicFriFolder only supports arity=2");
-        // If performance critical, make this API stateful to avoid this
-        // This is a bit more math than is necessary, but leaving it here
-        // in case we want higher arity in the future
-        let subgroup_start = F::two_adic_generator(log_height + log_arity)
-            .exp_u64(reverse_bits_len(index, log_height) as u64);
-        let mut xs = F::two_adic_generator(log_arity)
-            .shifted_powers(subgroup_start)
-            .take(arity)
-            .collect_vec();
-        reverse_slice_index_bits(&mut xs);
-        // assert_eq!(log_arity, 1, "can only interpolate two points for now");
-        // assert_eq!(xs.len(),evals.try_len().expect("error evals"));
-        // interpolate and evaluate at beta
-        e0 + (beta - xs[0]) * (e1 - e0) / (xs[1] - xs[0])
+       multi_fold_row(index, log_height, beta, evals, folding_factor)   
     }
 
     fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M, folding_factor: usize) -> Vec<F> {
-        // We use the fact that
-        //     p_e(x^2) = (p(x) + p(-x)) / 2
-        //     p_o(x^2) = (p(x) - p(-x)) / (2 x)
-        // that is,
-        //     p_e(g^(2i)) = (p(g^i) + p(g^(n/2 + i))) / 2
-        //     p_o(g^(2i)) = (p(g^i) - p(g^(n/2 + i))) / (2 g^i)
-        // so
-        //     result(g^(2i)) = p_e(g^(2i)) + beta p_o(g^(2i))
-        //                    = (1/2 + beta/2 g_inv^i) p(g^i)
-        //                    + (1/2 - beta/2 g_inv^i) p(g^(n/2 + i))
-        let g_inv = F::two_adic_generator(log2_strict_usize(m.height()) + 1).inverse();
-        let one_half = F::one().halve();
-        let half_beta = beta * one_half;
-
-        // TODO: vectorize this (after we have packed extension fields)
-
-        // beta/2 times successive powers of g_inv
-        let mut powers = g_inv
-            .shifted_powers(half_beta)
-            .take(m.height())
-            .collect_vec();
-        reverse_slice_index_bits(&mut powers);
-
-        m.par_rows()
-            .zip(powers)
-            .map(|(mut row, power)| {
-                let (lo, hi) = row.next_tuple().unwrap();
-                (one_half + power) * lo + (one_half - power) * hi
-            })
-            .collect()
+        fold_poly_matrix(m, beta, folding_factor)    
     }
 }
 

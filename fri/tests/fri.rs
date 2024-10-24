@@ -7,7 +7,7 @@ use p3_commit::ExtensionMmcs;
 use p3_dft::{Radix2Dit, TwoAdicSubgroupDft};
 use p3_field::extension::BinomialExtensionField;
 use p3_field::{AbstractField, Field};
-use p3_fri::{prover, verifier, FriConfig, TwoAdicFriGenericConfig};
+use p3_fri::{prover, verifier, FriConfig, LdtProver, LdtVerifer, TwoAdicFriGenericConfig};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::util::reverse_matrix_index_bits;
 use p3_matrix::Matrix;
@@ -17,7 +17,7 @@ use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
 use p3_util::log2_strict_usize;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-
+use prover::is_power_of_k;
 type Val = BabyBear;
 type Challenge = BinomialExtensionField<Val, 4>;
 
@@ -30,7 +30,7 @@ type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
 type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
 type MyFriConfig = FriConfig<ChallengeMmcs>;
 
-fn get_ldt_for_testing<R: Rng>(rng: &mut R) -> (Perm, MyFriConfig) {
+fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm, MyFriConfig) {
     let perm = Perm::new_from_rng_128(
         Poseidon2ExternalMatrixGeneral,
         DiffusionMatrixBabyBear::default(),
@@ -40,28 +40,36 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R) -> (Perm, MyFriConfig) {
     let compress = MyCompress::new(perm.clone());
     let mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
     let fri_config = FriConfig {
-        log_blowup: 1,
+        log_blowup: 2,
         num_queries: 10,
+        folding_factor: 1 << log_folding_factor,
+        log_folding_factor,
         proof_of_work_bits: 8,
         mmcs,
     };
     (perm, fri_config)
 }
 
-fn do_test_fri_ldt<R: Rng>(rng: &mut R) {
-    let (perm, fc) = get_ldt_for_testing(rng);
-    let dft = Radix2Dit::default();
+fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Vec<i32>) {
 
+    let (perm, fc) = get_ldt_for_testing(rng,log_folding_factor);
+    let dft = Radix2Dit::default();
     let shift = Val::generator();
 
-    let ldes: Vec<RowMajorMatrix<Val>> = (3..10)
+    // let degrees = vec![8,10];
+    let ldes: Vec<RowMajorMatrix<Val>> = degree_bits.iter()
         .map(|deg_bits| {
-            let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 16);
-            let mut lde = dft.coset_lde_batch(evals, 1, shift);
+            let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 1);
+            println!("evals len:{:?}", (1 << deg_bits));
+            //fix added_bit
+            let mut lde = dft.coset_lde_batch(evals, fc.log_blowup, shift);
             reverse_matrix_index_bits(&mut lde);
             lde
         })
         .collect();
+    ldes.iter().for_each(|it|{
+        println!("{:?}",it.height());
+    });
 
     let (proof, p_sample) = {
         // Prover world
@@ -93,16 +101,18 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R) {
 
         let log_max_height = log2_strict_usize(input[0].len());
 
-        let proof = prover::prove(
+        let fri_prover = prover::FriProver::new(&fc);
+        let proof = fri_prover.prove(
             &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
-            &fc,
-            input.clone(),
-            &mut chal,
-            |idx| {
+        input.clone(),
+        &mut chal,
+        |idx| {
                 // As our "input opening proof", just pass through the literal reduced openings.
                 let mut ro = vec![];
                 for v in &input {
+                    //TODO:
                     let log_height = log2_strict_usize(v.len());
+                    //fix
                     ro.push((log_height, v[idx >> (log_max_height - log_height)]));
                 }
                 ro.sort_by_key(|(lh, _)| Reverse(*lh));
@@ -115,9 +125,10 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R) {
 
     let mut v_challenger = Challenger::new(perm);
     let _alpha: Challenge = v_challenger.sample_ext_element();
-    verifier::verify(
+
+    let verifier = verifier::Verifier::new(&fc);
+    verifier.verify(
         &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
-        &fc,
         &proof,
         &mut v_challenger,
         |_index, proof| Ok(proof.clone()),
@@ -133,9 +144,34 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R) {
 
 #[test]
 fn test_fri_ldt() {
+    tracing_subscriber::fmt::init();
+    tracing::info!("开始 FRI LDT 测试");
+    // FRI is kind of flaky depending on indexing luck
+    for i in 0..4 {
+        let mut rng = ChaCha20Rng::seed_from_u64(0);
+        do_test_fri_ldt(&mut rng,1,vec![4,5,6,7,9,10]);
+    }
+}
+
+
+#[test]
+fn test_fri_ldt_with_folding_degree_4() {
+    tracing_subscriber::fmt::init();
+    tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(i);
-        do_test_fri_ldt(&mut rng);
+        do_test_fri_ldt(&mut rng,2,vec![2,4,6,8,10]);
+    }
+}
+
+#[test]
+fn test_fri_ldt_with_folding_degree_8() {
+    tracing_subscriber::fmt::init();
+    tracing::info!("开始 FRI LDT 测试");
+    // FRI is kind of flaky depending on indexing luck
+    for i in 0..4 {
+        let mut rng = ChaCha20Rng::seed_from_u64(i);
+        do_test_fri_ldt(&mut rng,3,vec![3,6,9,12]);
     }
 }

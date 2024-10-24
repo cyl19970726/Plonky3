@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::any::type_name;
 use core::hint::unreachable_unchecked;
-use core::mem;
+use core::mem::{self, align_of, size_of};
 use core::mem::MaybeUninit;
 
 pub mod array_serialization;
