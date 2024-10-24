@@ -50,14 +50,14 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm,
     (perm, fri_config)
 }
 
-fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize) {
-    let folding_factor = 1 << log_folding_factor;
+fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Vec<i32>) {
+
     let (perm, fc) = get_ldt_for_testing(rng,log_folding_factor);
     let dft = Radix2Dit::default();
     let shift = Val::generator();
 
-    let degrees = vec![8,10];
-    let ldes: Vec<RowMajorMatrix<Val>> = degrees.iter()
+    // let degrees = vec![8,10];
+    let ldes: Vec<RowMajorMatrix<Val>> = degree_bits.iter()
         .map(|deg_bits| {
             let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 1);
             println!("evals len:{:?}", (1 << deg_bits));
@@ -113,28 +113,12 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize) {
                     //TODO:
                     let log_height = log2_strict_usize(v.len());
                     //fix
-                    ro.push((log_height, v[idx >> (log_folding_factor * (log_max_height - log_height))]));
+                    ro.push((log_height, v[idx >> (log_max_height - log_height)]));
                 }
                 ro.sort_by_key(|(lh, _)| Reverse(*lh));
                 ro
             },
         );
-        // let proof = prover::prove(
-        //     &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
-        //     &fc,
-        //     input.clone(),
-        //     &mut chal,
-        //     |idx| {
-        //         // As our "input opening proof", just pass through the literal reduced openings.
-        //         let mut ro = vec![];
-        //         for v in &input {
-        //             let log_height = log2_strict_usize(v.len());
-        //             ro.push((log_height, v[idx >> (log_max_height - log_height)]));
-        //         }
-        //         ro.sort_by_key(|(lh, _)| Reverse(*lh));
-        //         ro
-        //     },
-        // );
 
         (proof, chal.sample_bits(8))
     };
@@ -165,18 +149,29 @@ fn test_fri_ldt() {
     // FRI is kind of flaky depending on indexing luck
     // for i in 0..4 {
     let mut rng = ChaCha20Rng::seed_from_u64(0);
-    do_test_fri_ldt(&mut rng,1);
+    do_test_fri_ldt(&mut rng,1,vec![4,5,6,78,9,10]);
     // }
 }
 
 
 #[test]
-fn test_fri_ldt_k() {
+fn test_fri_ldt_with_folding_degree_4() {
     tracing_subscriber::fmt::init();
     tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(i);
-        do_test_fri_ldt(&mut rng,2);
+        do_test_fri_ldt(&mut rng,2,vec![2,4,6,8,10]);
+    }
+}
+
+#[test]
+fn test_fri_ldt_with_folding_degree_8() {
+    tracing_subscriber::fmt::init();
+    tracing::info!("开始 FRI LDT 测试");
+    // FRI is kind of flaky depending on indexing luck
+    for i in 0..4 {
+        let mut rng = ChaCha20Rng::seed_from_u64(i);
+        do_test_fri_ldt(&mut rng,3,vec![3,6,9,12]);
     }
 }

@@ -63,6 +63,21 @@ pub trait Mmcs<T: Send + Sync>: Clone {
             .unwrap_or_else(|| panic!("No committed matrices?"))
     }
 
+    fn get_matrix_widths<M: Matrix<T>>(&self, prover_data: &Self::ProverData<M>) -> Vec<usize> {
+        self.get_matrices(prover_data)
+            .iter()
+            .map(|matrix| matrix.width())
+            .collect()
+    }
+
+     /// Get the largest height of any committed matrix.
+     fn get_max_width<M: Matrix<T>>(&self, prover_data: &Self::ProverData<M>) -> usize {
+        self.get_matrix_widths(prover_data)
+            .into_iter()
+            .max()
+            .unwrap_or_else(|| panic!("No committed matrices?"))
+    }
+
     /// Verify a batch opening.
     /// `index` is the row index we're opening for each matrix, following the same
     /// semantics as `open_batch`.

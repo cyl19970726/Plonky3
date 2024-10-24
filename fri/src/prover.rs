@@ -57,22 +57,20 @@ where
 
 /// This function checks if a given `value` is a power of `k`.
 /// It returns `true` if `value` is a power of `k`, otherwise `false`.
-pub fn is_power_of_k(mut value: usize, k: usize) -> bool {
-    // Edge case: k must be greater than 1, otherwise any value is trivially a power of 1.
-    if k < 2 {
-        return value == 1;
-    }
+pub fn is_power_of_k(degree_bits: usize, log_k: usize) -> bool {
+    degree_bits % log_k == 0
+}
+#[cfg(test)]
+mod test{
+    use super::is_power_of_k;
 
-    // Continuously divide the value by k as long as it's divisible by k
-    while value > 1 {
-        if value % k != 0 {
-            return false;
-        }
-        value /= k;
+    #[test]
+    fn test_pk(){
+        let folding_factor = 4;//log = 2
+        let value=  4<<1;
+        let valid = is_power_of_k(value, folding_factor);
+        assert!(valid)
     }
-
-    // If we've divided all the way down to 1, then it's a power of k.
-    value == 1
 }
 
 // polynomial commitment 
@@ -214,12 +212,14 @@ where
 
             //fix index_i = index / (folding_factor^i)
 
+            // calculate the index for the new polynomial
             let index_i = index >> (config.log_folding_factor * i);
             println!("index_i:{}", index_i);
-            // let index_i_sibling = index_i ^ 1;
+            // calculate the index for the polynomial-matrix which each row compose with folding_factor evaluation.
             let leaf_index = index_i >> config.log_folding_factor; // >> log_K
             println!("leaf_index:{}", leaf_index);
 
+            // we need to make sure the point open at the correctly position 
             let (mut opened_rows, opening_proof) = config.mmcs.open_batch(leaf_index, commit);
 
             assert_eq!(opened_rows.len(), 1);
