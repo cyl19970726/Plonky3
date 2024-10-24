@@ -147,10 +147,10 @@ fn test_fri_ldt() {
     tracing_subscriber::fmt::init();
     tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
-    // for i in 0..4 {
-    let mut rng = ChaCha20Rng::seed_from_u64(0);
-    do_test_fri_ldt(&mut rng,1,vec![4,5,6,78,9,10]);
-    // }
+    for i in 0..4 {
+        let mut rng = ChaCha20Rng::seed_from_u64(0);
+        do_test_fri_ldt(&mut rng,1,vec![4,5,6,7,9,10]);
+    }
 }
 
 
