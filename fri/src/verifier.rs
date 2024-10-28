@@ -32,6 +32,7 @@ where
     G: FriGenericConfig<Challenge>,
 {
     type Proof = FriProof<Challenge, M, Challenger::Witness, G::InputProof>;
+    type Conf = FriConfig<M>;
     fn folding_factor(&self) -> usize {
         self.config.folding_factor
     }

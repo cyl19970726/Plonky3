@@ -33,7 +33,8 @@ where
     G: FriGenericConfig<Challenge>
 {
     type Proof = FriProof<Challenge,M, Challenger::Witness, G::InputProof>;
-
+    type Conf = FriConfig<M>;
+    
     fn new(config: &'a FriConfig<M>) -> Self{
         Self{
             config,
@@ -73,11 +74,6 @@ mod test{
     }
 }
 
-// polynomial commitment 
-// PCS 接口 
-// FRI --> query_nums 0..16 
-//  for  0...16 { n degree fold into const } 
-// Stir  F --> Fold  --> g_poly --> query_num --> 计算挑战点 r_out, r_shift --> g_poly eval --> ans(x) --> shake_poly --> quotient(x) --> degree_correct --> next f 
 #[instrument(name = "FRI prover", skip_all)]
 pub fn prove<G, Val, Challenge, M, Challenger>(
     g: &G,

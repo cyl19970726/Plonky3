@@ -41,10 +41,12 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm,
     let mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
     let fri_config = FriConfig {
         log_blowup: 2,
-        num_queries: 10,
+        num_queries: 10,    
         folding_factor: 1 << log_folding_factor,
         log_folding_factor,
         proof_of_work_bits: 8,
+        soundness_type: p3_fri::SoundnessType::Conjecture,
+        protocol_security_level: 128,
         mmcs,
     };
     (perm, fri_config)
@@ -70,7 +72,7 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Ve
     ldes.iter().for_each(|it|{
         println!("{:?}",it.height());
     });
-
+ 
     let (proof, p_sample) = {
         // Prover world
         let mut chal = Challenger::new(perm.clone());

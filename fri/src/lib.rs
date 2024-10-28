@@ -34,11 +34,13 @@ where
     Challenge: ExtensionField<Val>,
     M: Mmcs<Challenge>,
     Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
-    G: FriGenericConfig<Challenge>
+    G: FriGenericConfig<Challenge>,
+    // Conf: LdtConfig,
 {
 	type Proof;
+    type Conf:LdtConfig<M>;
 
-    fn new(g: &'a FriConfig<M>) -> Self;
+    fn new(g: &'a Self::Conf) -> Self;
 
     fn folding_factor(&self) -> usize;
 
@@ -56,11 +58,12 @@ where
     Challenge: ExtensionField<Val>,
     M: Mmcs<Challenge>,
     Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
-    G: FriGenericConfig<Challenge>
+    G: FriGenericConfig<Challenge>,
 {
 
     type Proof;
-    fn new(config: &'a FriConfig<M>) -> Self;
+    type Conf;
+    fn new(config: &'a Self::Conf) -> Self;
 
     fn folding_factor(&self) -> usize;
 
@@ -71,4 +74,49 @@ where
         challenger: &mut Challenger,
         open_input: impl Fn(usize, &G::InputProof) -> Result<Vec<(usize, Challenge)>, G::InputError>,
     ) -> Result<(),FriError<M::Error, G::InputError>>;
+}
+
+pub trait LdtConfig<M>{
+    fn num_queries(&self,log_inv_rate: usize) -> usize;
+
+    fn log_folding_factor(&self) -> usize;
+
+    fn pow_bits(&self) -> usize;
+
+    fn log_blowup(&self) -> usize;
+
+    fn protocol_security_level(&self) -> usize;
+
+    fn soundness_type(&self) -> SoundnessType;
+
+    fn get_mmcs(&self) -> &M;
+}
+
+
+// log_start_degree: usize,log_blowup: usize,log_folding_factor: usize, pow_bits: usize, protocol_security_level: usize
+#[derive(Debug)]
+pub struct LdtParam {
+    pub log_start_degree: usize,
+    // log_rho_inv  
+    pub log_blowup: usize,
+    pub log_folding_factor: usize,
+    pub pow_bits: usize,
+    pub protocol_security_level: usize,
+    pub soundness_type: SoundnessType,
+}
+
+impl LdtParam {
+    pub fn num_queries(&self,log_inv_rate: usize) -> usize {
+        let constant = match self.soundness_type {
+            SoundnessType::Provable => 2,
+            SoundnessType::Conjecture => 1,
+        };
+        ((constant * self.protocol_security_level) as f64 / log_inv_rate as f64).ceil() as usize
+    }
+}
+
+#[derive(Debug,Clone,Copy)]
+pub enum SoundnessType {
+    Provable,
+    Conjecture,
 }

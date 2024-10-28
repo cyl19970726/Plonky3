@@ -4,6 +4,10 @@ use core::fmt::Debug;
 use p3_field::Field;
 use p3_matrix::Matrix;
 
+use crate::{LdtConfig, SoundnessType};
+
+
+
 #[derive(Debug)]
 pub struct FriConfig<M> {
     pub log_blowup: usize,
@@ -11,9 +15,44 @@ pub struct FriConfig<M> {
     pub log_folding_factor: usize,
     pub num_queries: usize,
     pub proof_of_work_bits: usize,
+    pub soundness_type: SoundnessType,
+    pub protocol_security_level: usize,
     pub mmcs: M,
+    
 }
+impl<M> LdtConfig<M> for FriConfig<M>{
+    fn num_queries(&self,log_inv_rate: usize) -> usize {
+        let constant = match self.soundness_type() {
+            SoundnessType::Provable => 2,
+            SoundnessType::Conjecture => 1,
+        };
+        ((constant * self.protocol_security_level) as f64 / log_inv_rate as f64).ceil() as usize
+    }
 
+    fn log_folding_factor(&self) -> usize {
+        self.log_folding_factor
+    }
+
+    fn log_blowup(&self) -> usize {
+        self.log_blowup
+    }
+
+    fn pow_bits(&self) -> usize {
+        self.proof_of_work_bits
+    }
+
+    fn protocol_security_level(&self) -> usize {
+        self.protocol_security_level
+    }
+
+    fn soundness_type(&self) -> SoundnessType {
+        self.soundness_type
+    }
+
+    fn get_mmcs(&self) -> &M {
+        &self.mmcs
+    }
+}
 impl<M> FriConfig<M> {
     pub const fn blowup(&self) -> usize {
         1 << self.log_blowup
