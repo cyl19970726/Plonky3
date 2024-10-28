@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use p3_field::AbstractField;
 use itertools::Itertools;
 use p3_field::TwoAdicField;
 use p3_matrix::dense::RowMajorMatrix;
@@ -213,6 +214,40 @@ fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
 }
 
 
+#[derive(Debug,Clone)]
+pub struct Polynomial<F: AbstractField>{
+    values: Vec<F>,
+}
+
+impl<F: AbstractField> From<Vec<F>> for Polynomial<F>{
+    fn from(values: Vec<F>) -> Self {
+        Self{
+            values
+        }
+    }
+}
+
+impl<F: AbstractField> Polynomial<F>{
+    pub fn evaluate(&self, point: F) -> F {
+        self.values.iter().enumerate().map(|(power, coeff)|{
+            coeff.clone() * point.exp_u64(power as u64)
+        }).sum()
+    }
+
+    // f(x) = a_0 + a_1x + a_2x^2 +a_3x^3
+    // f(x) = a_0 + a_2x^2 + a_1x +a_3x^3 = a_0 + a_2x^2 + a_3x^3 + alpha a_1 +alpha a_3x^2
+    pub fn fold(&self, folding_random: F,folding_factor: usize ) -> Self{
+        let degree = self.values.len() / folding_factor;
+        let values = self.values.chunks(folding_factor).into_iter().map(|chunk|{
+            chunk.iter().enumerate().fold(F::zero(),|acc, (power,coeff)| acc + folding_random.exp_u64(power as u64) * coeff.clone())
+        }).collect::<Vec<F>>();
+        assert_eq!(values.len(),degree);
+        Self{
+            values
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::{collections::btree_map::Range, vec};
@@ -269,32 +304,19 @@ mod tests {
 
         let mut rng = thread_rng();
         let folding_factor = 4;
+        let dft = Radix2Dit::default();
 
         let log_n = 4;
         let n = 1 << log_n;
         let coeffs = (0..n).map(|_| rng.gen::<F>()).collect::<Vec<_>>();
-
-        let dft = Radix2Dit::default();
         let evals = dft.dft(coeffs.clone());
 
-        let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
-        let new_degree  = p_0_coeffs.len();
-        let p_0_evals = dft.dft(p_0_coeffs);
-        
-        let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
-        let p_1_evals = dft.dft(p_1_coeffs);
-
-        let p_2_coeffs = coeffs.iter().cloned().skip(2).step_by(folding_factor).collect_vec();
-        let p_2_evals = dft.dft(p_2_coeffs);
-
-        let p_3_coeffs = coeffs.iter().cloned().skip(3).step_by(folding_factor).collect_vec();
-        let p_3_evals = dft.dft(p_3_coeffs);
+        let new_degree  = n/folding_factor;
 
         let beta = rng.gen::<F>();
-        let expected = izip!(p_0_evals, p_1_evals, p_2_evals, p_3_evals)
-            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
-            .collect::<Vec<_>>();
-
+        
+        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let expected = dft.dft(folded_coeffs.values);
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
         let mut new_folded = vec![];
@@ -319,32 +341,19 @@ mod tests {
 
         let mut rng = thread_rng();
         let folding_factor = 4;
+        let dft = Radix2Dit::default();
 
         let log_n = 4;
         let n = 1 << log_n;
         let coeffs = (0..n).map(|_| rng.gen::<F>()).collect::<Vec<_>>();
-
-        let dft = Radix2Dit::default();
         let evals = dft.dft(coeffs.clone());
 
-        let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
-        let new_degree  = p_0_coeffs.len();
-        let p_0_evals = dft.dft(p_0_coeffs);
-        
-        let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
-        let p_1_evals = dft.dft(p_1_coeffs);
-
-        let p_2_coeffs = coeffs.iter().cloned().skip(2).step_by(folding_factor).collect_vec();
-        let p_2_evals = dft.dft(p_2_coeffs);
-
-        let p_3_coeffs = coeffs.iter().cloned().skip(3).step_by(folding_factor).collect_vec();
-        let p_3_evals = dft.dft(p_3_coeffs);
+        let new_degree  = n/folding_factor;
 
         let beta = rng.gen::<F>();
-        let expected = izip!(p_0_evals, p_1_evals, p_2_evals, p_3_evals)
-            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
-            .collect::<Vec<_>>();
-
+        
+        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let expected = dft.dft(folded_coeffs.values);
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
         let mut new_folded = vec![];
@@ -377,23 +386,12 @@ mod tests {
         let dft = Radix2Dit::default();
         let evals = dft.dft(coeffs.clone());
 
-        let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
-        let new_degree  = p_0_coeffs.len();
-        let p_0_evals = dft.dft(p_0_coeffs);
-
-        let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
-        let p_1_evals = dft.dft(p_1_coeffs);
-
-        let p_2_coeffs = coeffs.iter().cloned().skip(2).step_by(folding_factor).collect_vec();
-        let p_2_evals = dft.dft(p_2_coeffs);
-
-        let p_3_coeffs = coeffs.iter().cloned().skip(3).step_by(folding_factor).collect_vec();
-        let p_3_evals = dft.dft(p_3_coeffs);
+        let new_degree  = n/folding_factor;
 
         let beta = rng.gen::<F>();
-        let expected = izip!(p_0_evals, p_1_evals, p_2_evals, p_3_evals)
-            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
-            .collect::<Vec<_>>();
+        
+        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let expected = dft.dft(folded_coeffs.values);
 
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
@@ -411,5 +409,49 @@ mod tests {
         reverse_slice_index_bits(&mut new_folded);
 
         assert_eq!(expected, new_folded);   
+    }
+
+
+    #[test]
+    fn test_fold_poly_coeff(){
+        type F = BabyBear;
+
+        let mut rng = thread_rng();
+        let folding_factor = 4;
+
+        let log_n = 4;
+        let n = 1 << log_n;
+        let coeffs = (0..n).map(|_| rng.gen::<F>()).collect::<Vec<_>>();
+
+        let dft = Radix2Dit::default();
+        let evals = dft.dft(coeffs.clone());
+
+        let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
+        let new_degree  = p_0_coeffs.len();
+        let p_0_evals = dft.dft(p_0_coeffs.clone());
+        
+        let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
+        let p_1_evals = dft.dft(p_1_coeffs.clone());
+
+        let p_2_coeffs = coeffs.iter().cloned().skip(2).step_by(folding_factor).collect_vec();
+        let p_2_evals = dft.dft(p_2_coeffs.clone());
+
+        let p_3_coeffs = coeffs.iter().cloned().skip(3).step_by(folding_factor).collect_vec();
+        let p_3_evals = dft.dft(p_3_coeffs.clone());
+
+        let beta = rng.gen::<F>();
+        let expected = izip!(p_0_evals, p_1_evals, p_2_evals, p_3_evals)
+            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
+            .collect::<Vec<_>>();
+
+        let expected_coeff = izip!(p_0_coeffs, p_1_coeffs, p_2_coeffs, p_3_coeffs)
+            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
+            .collect::<Vec<_>>();
+
+        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        assert_eq!(folded_coeffs.values,expected_coeff);
+        let folded_evals = dft.dft(folded_coeffs.values);
+        assert_eq!(folded_evals,expected);
+
     }
 }
