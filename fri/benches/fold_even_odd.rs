@@ -6,6 +6,7 @@ use p3_baby_bear::BabyBear;
 use p3_field::extension::Complex;
 use p3_field::TwoAdicField;
 use p3_fri::fold_even_odd;
+use p3_fri::fold_poly_with_dft;
 use p3_goldilocks::Goldilocks;
 use p3_mersenne_31::Mersenne31;
 use rand::distributions::{Distribution, Standard};

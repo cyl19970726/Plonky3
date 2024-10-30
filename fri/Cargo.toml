@@ -35,3 +35,11 @@ rand_chacha = "0.3.1"
 [[bench]]
 name = "fold_even_odd"
 harness = false
+
+[[bench]]
+name = "yu_fold_poly"
+harness = false
+
+[[bench]]
+name = "fold_poly_with_dft"
+harness = false

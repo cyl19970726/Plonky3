@@ -55,6 +55,7 @@ pub fn fold_even_odd<F: TwoAdicField>(poly: Vec<F>, beta: F) -> Vec<F> {
 }
 
 pub fn fold_poly<F: TwoAdicField,M: Matrix<F>>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
+    assert!(folding_factor > 0 && (folding_factor & (folding_factor - 1)) == 0, "The folding factor must be a power of 2");
     assert!(poly.len() % folding_factor == 0, "The length of the poly must be divisible by the folding factor");
 
     // let mut xs = F::two_adic_generator(log2_strict_usize(poly.len())).powers().take(poly.len()).collect::<Vec<F>>();
@@ -85,6 +86,8 @@ pub fn fold_poly_matrix<F: TwoAdicField,M: Matrix<F>>(poly: M, beta: F, folding_
 }
 
 pub fn yu_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
+    assert!(folding_factor > 0 && (folding_factor & (folding_factor - 1)) == 0, "The folding factor must be a power of 2");
+    assert!(poly.len() % folding_factor == 0, "The length of the poly must be divisible by the folding factor");
     let log_folding_factor  = log2_ceil_usize(folding_factor);
     
     let mut folded_poly = poly;
@@ -98,6 +101,7 @@ pub fn yu_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usiz
 }
 
 pub fn fold_poly_with_dft<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
+    assert!(folding_factor > 0 && (folding_factor & (folding_factor - 1)) == 0, "The folding factor must be a power of 2");
     assert!(poly.len() % folding_factor == 0, "The length of the poly must be divisible by the folding factor");
 
     let m = RowMajorMatrix::new(poly, folding_factor);
@@ -330,7 +334,7 @@ mod tests {
         let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
         let new_degree  = p_0_coeffs.len();
         let p_0_evals = dft.dft(p_0_coeffs);
-        
+
         let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
         let p_1_evals = dft.dft(p_1_coeffs);
 
