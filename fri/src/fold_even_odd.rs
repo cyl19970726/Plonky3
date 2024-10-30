@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
-
-use p3_field::AbstractField;
+use std::ops::{Add, Sub, Mul, Div};
+use p3_field::{AbstractField, Field};
 use itertools::Itertools;
 use p3_field::TwoAdicField;
 use p3_matrix::dense::RowMajorMatrix;
@@ -189,7 +189,7 @@ pub fn multi_fold_row<F: TwoAdicField>(
 }
 
 // Helper function to perform Lagrange interpolation
-fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
+pub fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
     xs: &[F],            // The x values (like powers of the two-adic generator)
     evals: &[F],          // The evaluation points corresponding to xs
     beta: F,              // The point where we want to evaluate the interpolated polynomial
@@ -213,13 +213,74 @@ fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
     result
 }
 
-
-#[derive(Debug,Clone)]
-pub struct Polynomial<F: AbstractField>{
-    values: Vec<F>,
+// Computes a polynomial that vanishes on points
+pub fn vanishing_poly<'a, F: Field>(points: impl IntoIterator<Item = &'a F>) -> Polynomial<F> {
+    // Compute the denominator (which is \prod_a(x - a))
+    let mut vanishing_poly: Polynomial<_> =
+        Polynomial::from(vec![F::one()]);
+    for a in points {
+        vanishing_poly =
+            vanishing_poly * Polynomial::from(vec![-*a, F::one()]);
+    }
+    vanishing_poly
 }
 
-impl<F: AbstractField> From<Vec<F>> for Polynomial<F>{
+// Computes a polynomial that interpolates the given points with the given answers
+pub fn naive_interpolation<'a, F: Field>(
+    points: impl IntoIterator<Item = &'a (F, F)>,
+) -> Polynomial<F> {
+    let points: Vec<_> = points.into_iter().collect();
+    let vanishing_poly = vanishing_poly(points.iter().map(|(a, _)| a));
+
+    // L(x) = Σ yᵢ lᵢ(x)
+    // Compute the ans polynomial (this is just a naive interpolation)
+    let mut ans_polynomial = Polynomial::from(vec![]);
+    for (a, eval) in points.iter() {
+        // Computes the vanishing (apart from x - a)
+        let vanishing_adjusted =
+            Polynomial::from(vec![-*a, F::one()]) / Polynomial::from(vec![-*a, F::one()]);
+
+        // Now, we can scale to get the right weigh
+        let scale_factor = *eval / vanishing_adjusted.evaluate(*a);
+        ans_polynomial = ans_polynomial
+            + Polynomial::from(
+                vanishing_adjusted.values
+                    .iter()
+                    .map(|x| *x * scale_factor)
+                    .collect::<Vec<F>>(),
+            );
+    }
+    ans_polynomial
+}
+
+#[derive(Debug,Clone)]
+pub struct Polynomial<F: Field>{
+    pub values: Vec<F>,
+}
+
+impl<F: Field> Polynomial<F> {
+    // 创建新的多项式
+    pub fn new(values: Vec<F>) -> Self {
+        Self { values }
+    }
+
+    // 获取多项式的次数
+    pub fn degree(&self) -> usize {
+        self.values.len().saturating_sub(1)
+    }
+
+    // 规范化多项式，移除最高次项的零系数
+    fn normalize(&mut self) {
+        while let Some(true) = self.values.last().map(|x| *x == F::zero()) {
+            self.values.pop();
+        }
+        if self.values.is_empty() {
+            self.values.push(F::zero());
+        }
+    }
+}
+
+impl<F: Field> From<Vec<F>> for Polynomial<F>{
     fn from(values: Vec<F>) -> Self {
         Self{
             values
@@ -227,7 +288,7 @@ impl<F: AbstractField> From<Vec<F>> for Polynomial<F>{
     }
 }
 
-impl<F: AbstractField> Polynomial<F>{
+impl<F: Field> Polynomial<F>{
     pub fn evaluate(&self, point: F) -> F {
         self.values.iter().enumerate().map(|(power, coeff)|{
             coeff.clone() * point.exp_u64(power as u64)
@@ -236,7 +297,7 @@ impl<F: AbstractField> Polynomial<F>{
 
     // f(x) = a_0 + a_1x + a_2x^2 +a_3x^3
     // f(x) = a_0 + a_2x^2 + a_1x +a_3x^3 = a_0 + a_2x^2 + a_3x^3 + alpha a_1 +alpha a_3x^2
-    pub fn fold(&self, folding_random: F,folding_factor: usize ) -> Self{
+    pub fn fold_coeff(&self, folding_random: F,folding_factor: usize ) -> Self{
         let degree = self.values.len() / folding_factor;
         let values = self.values.chunks(folding_factor).into_iter().map(|chunk|{
             chunk.iter().enumerate().fold(F::zero(),|acc, (power,coeff)| acc + folding_random.exp_u64(power as u64) * coeff.clone())
@@ -248,6 +309,120 @@ impl<F: AbstractField> Polynomial<F>{
     }
 }
 
+
+// 加法实现
+impl<F: Field> Add for Polynomial<F> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let max_len = self.values.len().max(rhs.values.len());
+        let mut result = Vec::with_capacity(max_len);
+        
+        for i in 0..max_len {
+            let lhs_val = self.values.get(i).cloned().unwrap_or_else(F::zero);
+            let rhs_val = rhs.values.get(i).cloned().unwrap_or_else(F::zero);
+            result.push(lhs_val + rhs_val);
+        }
+
+        let mut poly = Self::new(result);
+        poly.normalize();
+        poly
+    }
+}
+
+// 减法实现
+impl<F: Field> Sub for Polynomial<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let max_len = self.values.len().max(rhs.values.len());
+        let mut result = Vec::with_capacity(max_len);
+        
+        for i in 0..max_len {
+            let lhs_val = self.values.get(i).cloned().unwrap_or_else(F::zero);
+            let rhs_val = rhs.values.get(i).cloned().unwrap_or_else(F::zero);
+            result.push(lhs_val - rhs_val);
+        }
+
+        let mut poly = Self::new(result);
+        poly.normalize();
+        poly
+    }
+}
+
+
+// 乘法实现
+impl<F: Field> Mul for Polynomial<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let result_degree = self.degree() + rhs.degree();
+        let mut result = vec![F::zero(); result_degree + 1];
+        
+        for (i, &a) in self.values.iter().enumerate() {
+            for (j, &b) in rhs.values.iter().enumerate() {
+                result[i + j] = result[i + j] + (a * b);
+            }
+        }
+
+        let mut poly = Self::new(result);
+        poly.normalize();
+        poly
+    }
+}
+
+impl<F: Field> Div for Polynomial<F>{
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div_rem(rhs).expect("division error").0
+    }
+}
+
+
+// 除法实现（返回商和余数）
+impl<F: Field> Polynomial<F> {
+    pub fn div_rem(self, rhs: Self) -> Option<(Self, Self)> {
+        if rhs.values.iter().all(|x| x.is_zero()) {
+            return None; // 除数不能为0
+        }
+
+        let dividend_deg = self.degree();
+        let divisor_deg = rhs.degree();
+        let mut dividend = self.values.clone();
+        let divisor = rhs.values;
+
+        if dividend_deg < divisor_deg {
+            return Some((Self::new(vec![F::zero()]), self));
+        }
+
+        let mut quotient = vec![F::zero(); dividend_deg - divisor_deg + 1];
+        
+        for i in (0..=dividend_deg - divisor_deg).rev() {
+            if dividend.len() <= i + divisor_deg {
+                continue;
+            }
+            
+            let q = dividend[i + divisor_deg] / divisor[divisor_deg];
+            quotient[i] = q;
+
+            for j in 0..=divisor_deg {
+                let idx = i + j;
+                if idx < dividend.len() {
+                    dividend[idx] = dividend[idx] - q * divisor[j];
+                }
+            }
+        }
+
+        let mut remainder = Self::new(dividend);
+        remainder.normalize();
+        
+        let mut quotient_poly = Self::new(quotient);
+        quotient_poly.normalize();
+
+        Some((quotient_poly, remainder))
+    }
+}
 #[cfg(test)]
 mod tests {
     use alloc::{collections::btree_map::Range, vec};
@@ -315,7 +490,7 @@ mod tests {
 
         let beta = rng.gen::<F>();
         
-        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         let expected = dft.dft(folded_coeffs.values);
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
@@ -352,7 +527,7 @@ mod tests {
 
         let beta = rng.gen::<F>();
         
-        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         let expected = dft.dft(folded_coeffs.values);
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
@@ -390,7 +565,7 @@ mod tests {
 
         let beta = rng.gen::<F>();
         
-        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         let expected = dft.dft(folded_coeffs.values);
 
         // fold_even_odd takes and returns in bitrev order.
@@ -448,7 +623,7 @@ mod tests {
             .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
             .collect::<Vec<_>>();
 
-        let folded_coeffs = Polynomial::from(coeffs).fold(beta, folding_factor);
+        let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         assert_eq!(folded_coeffs.values,expected_coeff);
         let folded_evals = dft.dft(folded_coeffs.values);
         assert_eq!(folded_evals,expected);
