@@ -6,8 +6,6 @@ use p3_matrix::Matrix;
 
 use crate::{LdtConfig, SoundnessType};
 
-
-
 #[derive(Debug)]
 pub struct FriConfig<M> {
     pub log_blowup: usize,
@@ -18,10 +16,9 @@ pub struct FriConfig<M> {
     pub soundness_type: SoundnessType,
     pub protocol_security_level: usize,
     pub mmcs: M,
-    
 }
-impl<M> LdtConfig<M> for FriConfig<M>{
-    fn num_queries(&self,log_inv_rate: usize) -> usize {
+impl<M> LdtConfig<M> for FriConfig<M> {
+    fn num_queries(&self, log_inv_rate: usize) -> usize {
         let constant = match self.soundness_type() {
             SoundnessType::Provable => 2,
             SoundnessType::Conjecture => 1,

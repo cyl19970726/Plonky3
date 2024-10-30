@@ -93,13 +93,13 @@ where
             .leaves
             .iter()
             .map(|matrix| {
-                let log2_height = log2_ceil_usize(matrix.height());//4
-                let log2_width = log2_ceil_usize(matrix.width());//4
-                let log2_cur_cells = log2_height*log2_width;
+                let log2_height = log2_ceil_usize(matrix.height()); //4
+                let log2_width = log2_ceil_usize(matrix.width()); //4
+                let log2_cur_cells = log2_height * log2_width;
 
                 // assume different matrix has the same width
                 // let log2_width = log2_ceil_usize(matrix.width());
-                
+
                 println!("matrix height:{:?}", matrix.height());
                 // let bits_reduced = log_max_height - log2_height;
                 let bits_reduced = log2_max_cell - log2_cur_cells;
@@ -108,14 +108,17 @@ where
 
                 let reduced_index = index >> (2 * bits_reduced);
                 println!("reduced_index:{:?}", reduced_index);
-                
+
                 println!("matrix width:{:?}", matrix.width());
 
                 matrix.row(reduced_index).collect()
             })
             .collect_vec();
-            
-        println!("prover_data.digest_layers[0].len:{:?}", prover_data.digest_layers[0].len());
+
+        println!(
+            "prover_data.digest_layers[0].len:{:?}",
+            prover_data.digest_layers[0].len()
+        );
         //TODO:fix?
         let proof: Vec<_> = (0..log_max_height)
             .map(|i| prover_data.digest_layers[i][(index >> i) ^ 1])

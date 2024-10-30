@@ -8,8 +8,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::any::type_name;
 use core::hint::unreachable_unchecked;
-use core::mem::{self, align_of, size_of};
 use core::mem::MaybeUninit;
+use core::mem::{self, align_of, size_of};
 
 pub mod array_serialization;
 pub mod linear_map;

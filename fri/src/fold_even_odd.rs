@@ -1,15 +1,15 @@
 use alloc::vec::Vec;
-use std::ops::{Add, Sub, Mul, Div};
-use p3_field::{AbstractField, Field};
 use itertools::Itertools;
+use p3_dft::{Radix2Dit, TwoAdicSubgroupDft};
 use p3_field::TwoAdicField;
+use p3_field::{AbstractField, Field};
+use p3_interpolation::interpolate_coset;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_maybe_rayon::prelude::*;
 use p3_util::{log2_ceil_usize, log2_strict_usize, reverse_bits_len, reverse_slice_index_bits};
+use std::ops::{Add, Div, Mul, Sub};
 use tracing::instrument;
-use p3_dft::{Radix2Dit, TwoAdicSubgroupDft};
-use p3_interpolation::interpolate_coset;
 
 /// Fold a polynomial
 /// ```ignore
@@ -55,8 +55,15 @@ pub fn fold_even_odd<F: TwoAdicField>(poly: Vec<F>, beta: F) -> Vec<F> {
         .collect()
 }
 
-pub fn fold_poly<F: TwoAdicField,M: Matrix<F>>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
-    assert!(poly.len() % folding_factor == 0, "The length of the poly must be divisible by the folding factor");
+pub fn fold_poly<F: TwoAdicField, M: Matrix<F>>(
+    poly: Vec<F>,
+    beta: F,
+    folding_factor: usize,
+) -> Vec<F> {
+    assert!(
+        poly.len() % folding_factor == 0,
+        "The length of the poly must be divisible by the folding factor"
+    );
 
     // let mut xs = F::two_adic_generator(log2_strict_usize(poly.len())).powers().take(poly.len()).collect::<Vec<F>>();
 
@@ -70,46 +77,56 @@ pub fn fold_poly<F: TwoAdicField,M: Matrix<F>>(poly: Vec<F>, beta: F, folding_fa
     // }).collect::<Vec<F>>()
 }
 
-pub fn fold_poly_matrix<F: TwoAdicField,M: Matrix<F>>(poly: M, beta: F, folding_factor: usize) -> Vec<F> {
-
+pub fn fold_poly_matrix<F: TwoAdicField, M: Matrix<F>>(
+    poly: M,
+    beta: F,
+    folding_factor: usize,
+) -> Vec<F> {
     let poly_degree = poly.width() * poly.height();
-    let mut xs = F::two_adic_generator(log2_strict_usize(poly_degree)).powers().take(poly_degree).collect::<Vec<F>>();
+    let mut xs = F::two_adic_generator(log2_strict_usize(poly_degree))
+        .powers()
+        .take(poly_degree)
+        .collect::<Vec<F>>();
 
     reverse_slice_index_bits(&mut xs);
-    let xs_matrix = RowMajorMatrix::new(xs,folding_factor);
+    let xs_matrix = RowMajorMatrix::new(xs, folding_factor);
 
     // Parallel processing and caching beta powers
-    poly.to_row_major_matrix().row_slices().zip(xs_matrix.row_slices()).map(|(eval_row,xs_row)| {
-        
-        lagrange_interpolate_and_evaluate(xs_row,eval_row,beta)
-    }).collect::<Vec<F>>()
+    poly.to_row_major_matrix()
+        .row_slices()
+        .zip(xs_matrix.row_slices())
+        .map(|(eval_row, xs_row)| lagrange_interpolate_and_evaluate(xs_row, eval_row, beta))
+        .collect::<Vec<F>>()
 }
 
 pub fn yu_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
-    let log_folding_factor  = log2_ceil_usize(folding_factor);
-    
+    let log_folding_factor = log2_ceil_usize(folding_factor);
+
     let mut folded_poly = poly;
-    let betas = (1..log_folding_factor+1).into_iter().map(|power|{
-        beta.exp_u64(power as u64)
-    }).collect::<Vec<F>>();
-    for i in 0..log_folding_factor{
+    let betas = (1..log_folding_factor + 1)
+        .into_iter()
+        .map(|power| beta.exp_u64(power as u64))
+        .collect::<Vec<F>>();
+    for i in 0..log_folding_factor {
         folded_poly = fold_even_odd(folded_poly, betas[i])
     }
     folded_poly
 }
 
 pub fn fold_poly_with_dft<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
-    assert!(poly.len() % folding_factor == 0, "The length of the poly must be divisible by the folding factor");
+    assert!(
+        poly.len() % folding_factor == 0,
+        "The length of the poly must be divisible by the folding factor"
+    );
 
     let m = RowMajorMatrix::new(poly, folding_factor);
 
-    let g_inv = F::two_adic_generator(log2_strict_usize(m.height()) + log2_strict_usize(folding_factor)).inverse();
+    let g_inv =
+        F::two_adic_generator(log2_strict_usize(m.height()) + log2_strict_usize(folding_factor))
+            .inverse();
 
     //beta * g_inv^i
-    let mut xs = g_inv
-        .shifted_powers(beta)
-        .take(m.height())
-        .collect_vec();
+    let mut xs = g_inv.shifted_powers(beta).take(m.height()).collect_vec();
 
     reverse_slice_index_bits(&mut xs);
 
@@ -117,21 +134,25 @@ pub fn fold_poly_with_dft<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor
 
     // Parallel processing and caching beta powers
     let mut row_count = 0;
-    m.row_slices().map(|row| {
-        let mut row_evals = row.to_vec();
-        reverse_slice_index_bits(&mut row_evals);
+    m.row_slices()
+        .map(|row| {
+            let mut row_evals = row.to_vec();
+            reverse_slice_index_bits(&mut row_evals);
 
-        let row_coeff = dft.idft(row_evals.clone());
+            let row_coeff = dft.idft(row_evals.clone());
 
-        let x = xs[row_count];
-        row_count += 1;
+            let x = xs[row_count];
+            row_count += 1;
 
-        row_coeff.iter().enumerate().fold(F::zero(), |acc, (power, coeff)| {
-            acc + (*coeff * x.exp_u64(power as u64))
+            row_coeff
+                .iter()
+                .enumerate()
+                .fold(F::zero(), |acc, (power, coeff)| {
+                    acc + (*coeff * x.exp_u64(power as u64))
+                })
         })
-    }).collect::<Vec<F>>()
+        .collect::<Vec<F>>()
 }
-
 
 pub fn fold_row<F: TwoAdicField>(
     index: usize,
@@ -164,19 +185,23 @@ pub fn multi_fold_row<F: TwoAdicField>(
     log_height: usize,
     beta: F,
     evals: impl Iterator<Item = F>,
-    folding_factor: usize,  // folding_factor now supports 2, 4, 8, 16, etc.
+    folding_factor: usize, // folding_factor now supports 2, 4, 8, 16, etc.
 ) -> F {
     let arity = folding_factor;
     let log_arity = log2_strict_usize(folding_factor);
 
     // Collect all the evaluation points (arity number of points)
     let eval_points: Vec<F> = evals.take(arity).collect();
-    assert_eq!(eval_points.len(), arity, "Expected evals to match the arity");
+    assert_eq!(
+        eval_points.len(),
+        arity,
+        "Expected evals to match the arity"
+    );
 
     // Compute the subgroup start as before
     let subgroup_start = F::two_adic_generator(log_height + log_arity)
         .exp_u64(reverse_bits_len(index, log_height) as u64);
-    
+
     // Compute xs values (powers of the generator for interpolation points)
     let mut xs = F::two_adic_generator(log_arity)
         .shifted_powers(subgroup_start)
@@ -190,9 +215,9 @@ pub fn multi_fold_row<F: TwoAdicField>(
 
 // Helper function to perform Lagrange interpolation
 pub fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
-    xs: &[F],            // The x values (like powers of the two-adic generator)
-    evals: &[F],          // The evaluation points corresponding to xs
-    beta: F,              // The point where we want to evaluate the interpolated polynomial
+    xs: &[F],    // The x values (like powers of the two-adic generator)
+    evals: &[F], // The evaluation points corresponding to xs
+    beta: F,     // The point where we want to evaluate the interpolated polynomial
 ) -> F {
     let mut result = F::zero();
     let n = xs.len();
@@ -209,18 +234,16 @@ pub fn lagrange_interpolate_and_evaluate<F: TwoAdicField>(
         }
         result = result + evals[i] * li;
     }
-    
+
     result
 }
 
 // Computes a polynomial that vanishes on points
 pub fn vanishing_poly<'a, F: Field>(points: impl IntoIterator<Item = &'a F>) -> Polynomial<F> {
     // Compute the denominator (which is \prod_a(x - a))
-    let mut vanishing_poly: Polynomial<_> =
-        Polynomial::from(vec![F::one()]);
+    let mut vanishing_poly: Polynomial<_> = Polynomial::from(vec![F::one()]);
     for a in points {
-        vanishing_poly =
-            vanishing_poly * Polynomial::from(vec![-*a, F::one()]);
+        vanishing_poly = vanishing_poly * Polynomial::from(vec![-*a, F::one()]);
     }
     vanishing_poly
 }
@@ -244,7 +267,8 @@ pub fn naive_interpolation<'a, F: Field>(
         let scale_factor = *eval / vanishing_adjusted.evaluate(*a);
         ans_polynomial = ans_polynomial
             + Polynomial::from(
-                vanishing_adjusted.values
+                vanishing_adjusted
+                    .values
                     .iter()
                     .map(|x| *x * scale_factor)
                     .collect::<Vec<F>>(),
@@ -253,8 +277,8 @@ pub fn naive_interpolation<'a, F: Field>(
     ans_polynomial
 }
 
-#[derive(Debug,Clone)]
-pub struct Polynomial<F: Field>{
+#[derive(Debug, Clone)]
+pub struct Polynomial<F: Field> {
     pub values: Vec<F>,
 }
 
@@ -280,35 +304,44 @@ impl<F: Field> Polynomial<F> {
     }
 }
 
-impl<F: Field> From<Vec<F>> for Polynomial<F>{
+impl<F: Field> From<Vec<F>> for Polynomial<F> {
     fn from(values: Vec<F>) -> Self {
-        Self{
-            values
-        }
+        Self { values }
     }
 }
 
-impl<F: Field> Polynomial<F>{
+impl<F: Field> Polynomial<F> {
     pub fn evaluate(&self, point: F) -> F {
-        self.values.iter().enumerate().map(|(power, coeff)|{
-            coeff.clone() * point.exp_u64(power as u64)
-        }).sum()
+        self.values
+            .iter()
+            .enumerate()
+            .map(|(power, coeff)| coeff.clone() * point.exp_u64(power as u64))
+            .sum()
     }
 
     // f(x) = a_0 + a_1x + a_2x^2 +a_3x^3
-    // f(x) = a_0 + a_2x^2 + a_1x +a_3x^3 = a_0 + a_2x^2 + a_3x^3 + alpha a_1 +alpha a_3x^2
-    pub fn fold_coeff(&self, folding_random: F,folding_factor: usize ) -> Self{
+    //   a_0 a_1
+    //   a_2 a_3
+    // f(x) = a_0 + a_2x^2 + a_1x +a_3x^3 = a_0 + a_2x^2 + a_3x^3 + alpha a_1 +alpha a_3x^2 = (a_0 + a_1 alpha) + (a_2  + a_3 alpha) x
+    pub fn fold_coeff(&self, folding_random: F, folding_factor: usize) -> Self {
         let degree = self.values.len() / folding_factor;
-        let values = self.values.chunks(folding_factor).into_iter().map(|chunk|{
-            chunk.iter().enumerate().fold(F::zero(),|acc, (power,coeff)| acc + folding_random.exp_u64(power as u64) * coeff.clone())
-        }).collect::<Vec<F>>();
-        assert_eq!(values.len(),degree);
-        Self{
-            values
-        }
+        let values = self
+            .values
+            .chunks(folding_factor)
+            .into_iter()
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .fold(F::zero(), |acc, (power, coeff)| {
+                        acc + folding_random.exp_u64(power as u64) * coeff.clone()
+                    })
+            })
+            .collect::<Vec<F>>();
+        assert_eq!(values.len(), degree);
+        Self { values }
     }
 }
-
 
 // 加法实现
 impl<F: Field> Add for Polynomial<F> {
@@ -317,7 +350,7 @@ impl<F: Field> Add for Polynomial<F> {
     fn add(self, rhs: Self) -> Self::Output {
         let max_len = self.values.len().max(rhs.values.len());
         let mut result = Vec::with_capacity(max_len);
-        
+
         for i in 0..max_len {
             let lhs_val = self.values.get(i).cloned().unwrap_or_else(F::zero);
             let rhs_val = rhs.values.get(i).cloned().unwrap_or_else(F::zero);
@@ -337,7 +370,7 @@ impl<F: Field> Sub for Polynomial<F> {
     fn sub(self, rhs: Self) -> Self::Output {
         let max_len = self.values.len().max(rhs.values.len());
         let mut result = Vec::with_capacity(max_len);
-        
+
         for i in 0..max_len {
             let lhs_val = self.values.get(i).cloned().unwrap_or_else(F::zero);
             let rhs_val = rhs.values.get(i).cloned().unwrap_or_else(F::zero);
@@ -350,7 +383,6 @@ impl<F: Field> Sub for Polynomial<F> {
     }
 }
 
-
 // 乘法实现
 impl<F: Field> Mul for Polynomial<F> {
     type Output = Self;
@@ -358,7 +390,7 @@ impl<F: Field> Mul for Polynomial<F> {
     fn mul(self, rhs: Self) -> Self::Output {
         let result_degree = self.degree() + rhs.degree();
         let mut result = vec![F::zero(); result_degree + 1];
-        
+
         for (i, &a) in self.values.iter().enumerate() {
             for (j, &b) in rhs.values.iter().enumerate() {
                 result[i + j] = result[i + j] + (a * b);
@@ -371,14 +403,13 @@ impl<F: Field> Mul for Polynomial<F> {
     }
 }
 
-impl<F: Field> Div for Polynomial<F>{
+impl<F: Field> Div for Polynomial<F> {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
         self.div_rem(rhs).expect("division error").0
     }
 }
-
 
 // 除法实现（返回商和余数）
 impl<F: Field> Polynomial<F> {
@@ -397,12 +428,12 @@ impl<F: Field> Polynomial<F> {
         }
 
         let mut quotient = vec![F::zero(); dividend_deg - divisor_deg + 1];
-        
+
         for i in (0..=dividend_deg - divisor_deg).rev() {
             if dividend.len() <= i + divisor_deg {
                 continue;
             }
-            
+
             let q = dividend[i + divisor_deg] / divisor[divisor_deg];
             quotient[i] = q;
 
@@ -416,7 +447,7 @@ impl<F: Field> Polynomial<F> {
 
         let mut remainder = Self::new(dividend);
         remainder.normalize();
-        
+
         let mut quotient_poly = Self::new(quotient);
         quotient_poly.normalize();
 
@@ -460,21 +491,21 @@ mod tests {
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
         reverse_slice_index_bits(&mut folded);
-        let first_row =&folded[4..6].to_vec();
+        let first_row = &folded[4..6].to_vec();
         let folded_row_res = fold_row(2, log_n, beta, first_row.iter().cloned(), 2);
 
         let folded_row_res1 = multi_fold_row(2, log_n, beta, first_row.iter().cloned(), 2);
         folded = fold_even_odd(folded, beta);
 
-        assert_eq!(folded[2],folded_row_res);
-        assert_eq!(folded_row_res1,folded_row_res);
+        assert_eq!(folded[2], folded_row_res);
+        assert_eq!(folded_row_res1, folded_row_res);
         reverse_slice_index_bits(&mut folded);
         assert_eq!(expected, folded);
         // fold_row(index, log_height, beta, evals, folding_factor)
     }
 
     #[test]
-    fn test_fold_poly(){
+    fn test_fold_poly() {
         type F = BabyBear;
 
         let mut rng = thread_rng();
@@ -486,32 +517,38 @@ mod tests {
         let coeffs = (0..n).map(|_| rng.gen::<F>()).collect::<Vec<_>>();
         let evals = dft.dft(coeffs.clone());
 
-        let new_degree  = n/folding_factor;
+        let new_degree = n / folding_factor;
 
         let beta = rng.gen::<F>();
-        
+
         let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         let expected = dft.dft(folded_coeffs.values);
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
         let mut new_folded = vec![];
         reverse_slice_index_bits(&mut folded);
-        for i in 0..10{
+        for i in 0..10 {
             let sample_index = rng.gen::<usize>() % new_degree;
-            let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
-            let sample_row =&folded[range].to_vec();
-            let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
-            new_folded = fold_poly::<F,RowMajorMatrix<F>>(folded.clone(), beta,folding_factor);
-            assert_eq!(new_folded[sample_index],multi_fold_row_res);
+            let range = sample_index * folding_factor..(sample_index + 1) * folding_factor;
+            let sample_row = &folded[range].to_vec();
+            let multi_fold_row_res = multi_fold_row(
+                sample_index,
+                log_n,
+                beta,
+                sample_row.into_iter().cloned(),
+                folding_factor,
+            );
+            new_folded = fold_poly::<F, RowMajorMatrix<F>>(folded.clone(), beta, folding_factor);
+            assert_eq!(new_folded[sample_index], multi_fold_row_res);
         }
 
         reverse_slice_index_bits(&mut new_folded);
 
-        assert_eq!(expected, new_folded);   
+        assert_eq!(expected, new_folded);
     }
 
     #[test]
-    fn test_fold_poly_dft(){
+    fn test_fold_poly_dft() {
         type F = BabyBear;
 
         let mut rng = thread_rng();
@@ -523,32 +560,38 @@ mod tests {
         let coeffs = (0..n).map(|_| rng.gen::<F>()).collect::<Vec<_>>();
         let evals = dft.dft(coeffs.clone());
 
-        let new_degree  = n/folding_factor;
+        let new_degree = n / folding_factor;
 
         let beta = rng.gen::<F>();
-        
+
         let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         let expected = dft.dft(folded_coeffs.values);
         // fold_even_odd takes and returns in bitrev order.
         let mut folded = evals;
         let mut new_folded = vec![];
         reverse_slice_index_bits(&mut folded);
-        for i in 0..10{
+        for i in 0..10 {
             let sample_index = rng.gen::<usize>() % new_degree;
-            let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
-            let sample_row =&folded[range].to_vec();
-            let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
-            new_folded = fold_poly::<F,RowMajorMatrix<F>>(folded.clone(), beta,folding_factor);
-            assert_eq!(new_folded[sample_index],multi_fold_row_res);
+            let range = sample_index * folding_factor..(sample_index + 1) * folding_factor;
+            let sample_row = &folded[range].to_vec();
+            let multi_fold_row_res = multi_fold_row(
+                sample_index,
+                log_n,
+                beta,
+                sample_row.into_iter().cloned(),
+                folding_factor,
+            );
+            new_folded = fold_poly::<F, RowMajorMatrix<F>>(folded.clone(), beta, folding_factor);
+            assert_eq!(new_folded[sample_index], multi_fold_row_res);
         }
 
         reverse_slice_index_bits(&mut new_folded);
 
-        assert_eq!(expected, new_folded);   
+        assert_eq!(expected, new_folded);
     }
 
     #[test]
-    fn test_yu_fold_poly(){
+    fn test_yu_fold_poly() {
         type F = BabyBear;
         let folding_factor = 4;
 
@@ -561,10 +604,10 @@ mod tests {
         let dft = Radix2Dit::default();
         let evals = dft.dft(coeffs.clone());
 
-        let new_degree  = n/folding_factor;
+        let new_degree = n / folding_factor;
 
         let beta = rng.gen::<F>();
-        
+
         let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
         let expected = dft.dft(folded_coeffs.values);
 
@@ -572,23 +615,28 @@ mod tests {
         let mut folded = evals;
         let mut new_folded = vec![];
         reverse_slice_index_bits(&mut folded);
-        for i in 0..10{
+        for i in 0..10 {
             let sample_index = rng.gen::<usize>() % new_degree;
-            let range = sample_index * folding_factor..(sample_index+1) * folding_factor;
-            let sample_row =&folded[range].to_vec();
-            let multi_fold_row_res = multi_fold_row(sample_index, log_n, beta, sample_row.into_iter().cloned(), folding_factor);
-            new_folded = fold_poly::<F,RowMajorMatrix<F>>(folded.clone(), beta,folding_factor);
-            assert_eq!(new_folded[sample_index],multi_fold_row_res);
+            let range = sample_index * folding_factor..(sample_index + 1) * folding_factor;
+            let sample_row = &folded[range].to_vec();
+            let multi_fold_row_res = multi_fold_row(
+                sample_index,
+                log_n,
+                beta,
+                sample_row.into_iter().cloned(),
+                folding_factor,
+            );
+            new_folded = fold_poly::<F, RowMajorMatrix<F>>(folded.clone(), beta, folding_factor);
+            assert_eq!(new_folded[sample_index], multi_fold_row_res);
         }
 
         reverse_slice_index_bits(&mut new_folded);
 
-        assert_eq!(expected, new_folded);   
+        assert_eq!(expected, new_folded);
     }
 
-
     #[test]
-    fn test_fold_poly_coeff(){
+    fn test_fold_poly_coeff() {
         type F = BabyBear;
 
         let mut rng = thread_rng();
@@ -602,31 +650,49 @@ mod tests {
         let evals = dft.dft(coeffs.clone());
 
         let p_0_coeffs = coeffs.iter().cloned().step_by(folding_factor).collect_vec();
-        let new_degree  = p_0_coeffs.len();
+        let new_degree = p_0_coeffs.len();
         let p_0_evals = dft.dft(p_0_coeffs.clone());
-        
-        let p_1_coeffs = coeffs.iter().cloned().skip(1).step_by(folding_factor).collect_vec();
+
+        let p_1_coeffs = coeffs
+            .iter()
+            .cloned()
+            .skip(1)
+            .step_by(folding_factor)
+            .collect_vec();
         let p_1_evals = dft.dft(p_1_coeffs.clone());
 
-        let p_2_coeffs = coeffs.iter().cloned().skip(2).step_by(folding_factor).collect_vec();
+        let p_2_coeffs = coeffs
+            .iter()
+            .cloned()
+            .skip(2)
+            .step_by(folding_factor)
+            .collect_vec();
         let p_2_evals = dft.dft(p_2_coeffs.clone());
 
-        let p_3_coeffs = coeffs.iter().cloned().skip(3).step_by(folding_factor).collect_vec();
+        let p_3_coeffs = coeffs
+            .iter()
+            .cloned()
+            .skip(3)
+            .step_by(folding_factor)
+            .collect_vec();
         let p_3_evals = dft.dft(p_3_coeffs.clone());
 
         let beta = rng.gen::<F>();
         let expected = izip!(p_0_evals, p_1_evals, p_2_evals, p_3_evals)
-            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
+            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| {
+                p_0_eval + beta * p_1_eval + beta * beta * p_2_eval + beta * beta * beta * p_3_eval
+            })
             .collect::<Vec<_>>();
 
         let expected_coeff = izip!(p_0_coeffs, p_1_coeffs, p_2_coeffs, p_3_coeffs)
-            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| p_0_eval + beta * p_1_eval + beta*beta * p_2_eval + beta*beta*beta * p_3_eval)
+            .map(|(p_0_eval, p_1_eval, p_2_eval, p_3_eval)| {
+                p_0_eval + beta * p_1_eval + beta * beta * p_2_eval + beta * beta * beta * p_3_eval
+            })
             .collect::<Vec<_>>();
 
         let folded_coeffs = Polynomial::from(coeffs).fold_coeff(beta, folding_factor);
-        assert_eq!(folded_coeffs.values,expected_coeff);
+        assert_eq!(folded_coeffs.values, expected_coeff);
         let folded_evals = dft.dft(folded_coeffs.values);
-        assert_eq!(folded_evals,expected);
-
+        assert_eq!(folded_evals, expected);
     }
 }

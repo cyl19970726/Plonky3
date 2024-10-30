@@ -70,8 +70,8 @@ pub trait Mmcs<T: Send + Sync>: Clone {
             .collect()
     }
 
-     /// Get the largest height of any committed matrix.
-     fn get_max_width<M: Matrix<T>>(&self, prover_data: &Self::ProverData<M>) -> usize {
+    /// Get the largest height of any committed matrix.
+    fn get_max_width<M: Matrix<T>>(&self, prover_data: &Self::ProverData<M>) -> usize {
         self.get_matrix_widths(prover_data)
             .into_iter()
             .max()
