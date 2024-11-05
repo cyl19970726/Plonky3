@@ -15,9 +15,9 @@ use p3_merkle_tree::MerkleTreeMmcs;
 use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
 use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
 use p3_util::log2_strict_usize;
+use prover::is_power_of_k;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use prover::is_power_of_k;
 type Val = BabyBear;
 type Challenge = BinomialExtensionField<Val, 4>;
 
@@ -42,22 +42,23 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm,
     let fri_config = FriConfig {
         log_blowup: 2,
         num_queries: 10,
-        folding_factor: 1 << log_folding_factor,
         log_folding_factor,
         proof_of_work_bits: 8,
+        soundness_type: p3_fri::SoundnessType::Conjecture,
+        protocol_security_level: 128,
         mmcs,
     };
     (perm, fri_config)
 }
 
-fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Vec<i32>) {
-
-    let (perm, fc) = get_ldt_for_testing(rng,log_folding_factor);
+fn do_test_fri_ldt<R: Rng>(rng: &mut R, log_folding_factor: usize, degree_bits: Vec<usize>) {
+    let (perm, fc) = get_ldt_for_testing(rng, log_folding_factor);
     let dft = Radix2Dit::default();
     let shift = Val::generator();
 
     // let degrees = vec![8,10];
-    let ldes: Vec<RowMajorMatrix<Val>> = degree_bits.iter()
+    let ldes: Vec<RowMajorMatrix<Val>> = degree_bits
+        .iter()
         .map(|deg_bits| {
             let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 1);
             println!("evals len:{:?}", (1 << deg_bits));
@@ -67,8 +68,8 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Ve
             lde
         })
         .collect();
-    ldes.iter().for_each(|it|{
-        println!("{:?}",it.height());
+    ldes.iter().for_each(|it| {
+        println!("{:?}", it.height());
     });
 
     let (proof, p_sample) = {
@@ -104,9 +105,9 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Ve
         let fri_prover = prover::FriProver::new(&fc);
         let proof = fri_prover.prove(
             &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
-        input.clone(),
-        &mut chal,
-        |idx| {
+            input.clone(),
+            &mut chal,
+            |idx| {
                 // As our "input opening proof", just pass through the literal reduced openings.
                 let mut ro = vec![];
                 for v in &input {
@@ -127,13 +128,14 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R,log_folding_factor: usize,degree_bits: Ve
     let _alpha: Challenge = v_challenger.sample_ext_element();
 
     let verifier = verifier::Verifier::new(&fc);
-    verifier.verify(
-        &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
-        &proof,
-        &mut v_challenger,
-        |_index, proof| Ok(proof.clone()),
-    )
-    .unwrap();
+    verifier
+        .verify(
+            &TwoAdicFriGenericConfig::<Vec<(usize, Challenge)>, ()>(PhantomData),
+            &proof,
+            &mut v_challenger,
+            |_index, proof| Ok(proof.clone()),
+        )
+        .unwrap();
 
     assert_eq!(
         p_sample,
@@ -149,10 +151,9 @@ fn test_fri_ldt() {
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(0);
-        do_test_fri_ldt(&mut rng,1,vec![4,5,6,7,9,10]);
+        do_test_fri_ldt(&mut rng, 1, vec![4, 5, 6, 7, 9, 10]);
     }
 }
-
 
 #[test]
 fn test_fri_ldt_with_folding_degree_4() {
@@ -161,7 +162,7 @@ fn test_fri_ldt_with_folding_degree_4() {
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(i);
-        do_test_fri_ldt(&mut rng,2,vec![2,4,6,8,10]);
+        do_test_fri_ldt(&mut rng, 2, vec![2, 4, 6, 8, 10]);
     }
 }
 
@@ -172,6 +173,6 @@ fn test_fri_ldt_with_folding_degree_8() {
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(i);
-        do_test_fri_ldt(&mut rng,3,vec![3,6,9,12]);
+        do_test_fri_ldt(&mut rng, 3, vec![3, 6, 9, 12]);
     }
 }

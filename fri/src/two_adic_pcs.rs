@@ -22,7 +22,7 @@ use p3_util::{log2_strict_usize, reverse_bits_len, reverse_slice_index_bits, Vec
 use serde::{Deserialize, Serialize};
 use tracing::{info_span, instrument};
 
-use crate::fold_even_odd::{yu_fold_poly,multi_fold_row,fold_poly};
+use crate::fold_even_odd::{fold_poly, multi_fold_row, yu_fold_poly};
 use crate::verifier::{self, FriError};
 use crate::{fold_poly_matrix, prover, FriConfig, FriGenericConfig, FriProof};
 
@@ -77,11 +77,11 @@ impl<F: TwoAdicField, InputProof, InputError: Debug> FriGenericConfig<F>
         evals: impl Iterator<Item = F>,
         folding_factor: usize,
     ) -> F {
-       multi_fold_row(index, log_height, beta, evals, folding_factor)   
+        multi_fold_row(index, log_height, beta, evals, folding_factor)
     }
 
     fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M, folding_factor: usize) -> Vec<F> {
-        fold_poly_matrix(m, beta, folding_factor)    
+        fold_poly_matrix(m, beta, folding_factor)
     }
 }
 
