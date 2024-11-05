@@ -8,9 +8,7 @@ use crate::{LdtConfig, SoundnessType};
 
 #[derive(Debug)]
 pub struct FriConfig<M> {
-    pub log_start_degree: usize,
     pub log_blowup: usize,
-    pub folding_factor: usize,
     pub log_folding_factor: usize,
     pub num_queries: usize,
     pub proof_of_work_bits: usize,
@@ -32,7 +30,7 @@ impl<M> LdtConfig<M> for FriConfig<M> {
     }
 
     fn log_start_degree(&self) -> usize {
-        self.log_start_degree
+        0
     }
 
     fn log_blowup(&self) -> usize {

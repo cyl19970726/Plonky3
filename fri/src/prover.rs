@@ -44,7 +44,7 @@ where
     }
 
     fn folding_factor(&self) -> usize {
-        self.config.folding_factor
+        1 << self.config.log_folding_factor
     }
 
     fn prove(
@@ -103,7 +103,7 @@ where
     inputs.iter().for_each(|poly| {
         info!("poly_len: {:?}", poly.len());
 
-        assert!(is_power_of_k(poly.len(), config.folding_factor));
+        assert!(is_power_of_k(poly.len(), 1 << config.log_folding_factor));
     });
 
     let commit_phase_result = commit_phase(g, config, inputs, challenger);
@@ -158,14 +158,14 @@ where
     let mut data = vec![];
 
     while folded.len() > config.blowup() {
-        let leaves = RowMajorMatrix::new(folded, config.folding_factor);
+        let leaves = RowMajorMatrix::new(folded, 1 << config.log_folding_factor);
         let (commit, prover_data) = config.mmcs.commit_matrix(leaves);
         challenger.observe(commit.clone());
 
         let beta: Challenge = challenger.sample_ext_element();
         // We passed ownership of `current` to the MMCS, so get a reference to it
         let leaves = config.mmcs.get_matrices(&prover_data).pop().unwrap();
-        folded = g.fold_matrix(beta, leaves.as_view(), config.folding_factor);
+        folded = g.fold_matrix(beta, leaves.as_view(), 1 << config.log_folding_factor);
 
         commits.push(commit);
         data.push(prover_data);
@@ -223,7 +223,7 @@ where
             let opened_row = opened_rows.pop().unwrap();
             assert_eq!(
                 opened_row.len(),
-                config.folding_factor,
+                1 << config.log_folding_factor,
                 "the number of committed data should be euqal to folding_factor"
             );
 

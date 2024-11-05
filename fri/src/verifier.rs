@@ -35,7 +35,7 @@ where
     type Proof = FriProof<Challenge, M, Challenger::Witness, G::InputProof>;
     type Conf = FriConfig<M>;
     fn folding_factor(&self) -> usize {
-        self.config.folding_factor
+        1 << self.config.log_folding_factor
     }
 
     fn new(config: &'a FriConfig<M>) -> Self {
@@ -201,7 +201,7 @@ where
         // evals[index_sibling % 2] = opening.sibling_value;
 
         let dims = &[Dimensions {
-            width: config.folding_factor,
+            width: 1 << config.log_folding_factor,
             height: 1 << log_folded_height,
         }];
         config
@@ -222,7 +222,7 @@ where
             log_folded_height,
             beta,
             opening_row.into_iter(),
-            config.folding_factor,
+            1 << config.log_folding_factor,
         );
     }
 
