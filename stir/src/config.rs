@@ -58,6 +58,10 @@ impl<M> LdtConfig<M> for StirConfig<M> {
         self.param.log_folding_factor
     }
 
+    fn log_start_degree(&self) -> usize {
+        self.param.log_start_degree
+    }
+
     fn log_blowup(&self) -> usize {
         self.param.log_blowup
     }

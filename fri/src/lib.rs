@@ -80,6 +80,8 @@ pub trait LdtConfig<M> {
 
     fn log_folding_factor(&self) -> usize;
 
+    fn log_start_degree(&self) -> usize;
+
     fn pow_bits(&self) -> usize;
 
     fn log_blowup(&self) -> usize;
@@ -125,6 +127,7 @@ pub enum StirError<CommitMmcsErr, InputError> {
     CommitPhaseMmcsError(CommitMmcsErr),
     InputError(InputError),
     FinalPolyMismatch,
+    FinalPolyCheckErr,
     InvalidPowWitness,
 }
 
