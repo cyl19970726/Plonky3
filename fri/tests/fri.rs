@@ -30,7 +30,7 @@ type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
 type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
 type MyFriConfig = FriConfig<ChallengeMmcs>;
 
-fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm, MyFriConfig) {
+fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize, degree_bits:usize) -> (Perm, MyFriConfig) {
     let perm = Perm::new_from_rng_128(
         Poseidon2ExternalMatrixGeneral,
         DiffusionMatrixBabyBear::default(),
@@ -40,6 +40,7 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm,
     let compress = MyCompress::new(perm.clone());
     let mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
     let fri_config = FriConfig {
+        log_start_degree:degree_bits,
         log_blowup: 2,
         num_queries: 10,
         folding_factor: 1 << log_folding_factor,
@@ -52,8 +53,8 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm,
     (perm, fri_config)
 }
 
-fn do_test_fri_ldt<R: Rng>(rng: &mut R, log_folding_factor: usize, degree_bits: Vec<i32>) {
-    let (perm, fc) = get_ldt_for_testing(rng, log_folding_factor);
+fn do_test_fri_ldt<R: Rng>(rng: &mut R, log_folding_factor: usize, degree_bits: Vec<usize>) {
+    let (perm, fc) = get_ldt_for_testing(rng, log_folding_factor, degree_bits[0]);
     let dft = Radix2Dit::default();
     let shift = Val::generator();
 
