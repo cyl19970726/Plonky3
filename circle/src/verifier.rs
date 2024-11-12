@@ -6,7 +6,7 @@ use p3_challenger::{CanObserve, FieldChallenger, GrindingChallenger};
 use p3_commit::Mmcs;
 use p3_field::{ExtensionField, Field};
 use p3_fri::verifier::FriError;
-use p3_fri::{FriConfig, FriGenericConfig};
+use p3_fri::{FriConfig, FriGenericConfig, LdtConfig};
 use p3_matrix::Dimensions;
 
 use crate::{CircleCommitPhaseProofStep, CircleFriProof};
@@ -35,16 +35,16 @@ where
         .collect();
     challenger.observe_ext_element(proof.final_poly);
 
-    if proof.query_proofs.len() != config.num_queries {
+    if proof.query_proofs.len() != config.num_queries(config.log_blowup()) {
         return Err(FriError::InvalidProofShape);
     }
 
     // Check PoW.
-    if !challenger.check_witness(config.proof_of_work_bits, proof.pow_witness) {
+    if !challenger.check_witness(config.pow_bits(), proof.pow_witness) {
         return Err(FriError::InvalidPowWitness);
     }
 
-    let log_max_height = proof.commit_phase_commits.len() + config.log_blowup;
+    let log_max_height = proof.commit_phase_commits.len() + config.log_blowup();
 
     for qp in &proof.query_proofs {
         let index = challenger.sample_bits(log_max_height + g.extra_query_index_bits());
@@ -131,7 +131,7 @@ where
             log_folded_height,
             beta,
             evals.into_iter(),
-            config.folding_factor,
+            1 << config.log_folding_factor(),
         );
     }
 

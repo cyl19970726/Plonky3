@@ -7,7 +7,7 @@ use p3_commit::ExtensionMmcs;
 use p3_dft::{Radix2Dit, TwoAdicSubgroupDft};
 use p3_field::extension::BinomialExtensionField;
 use p3_field::{AbstractField, Field};
-use p3_fri::{prover, verifier, FriConfig, LdtProver, LdtVerifer, TwoAdicFriGenericConfig};
+use p3_fri::{prover, verifier, FriConfig, LdtConfig, LdtProver, LdtVerifer, TwoAdicFriGenericConfig};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::util::reverse_matrix_index_bits;
 use p3_matrix::Matrix;
@@ -39,15 +39,7 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_folding_factor: usize) -> (Perm,
     let hash = MyHash::new(perm.clone());
     let compress = MyCompress::new(perm.clone());
     let mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
-    let fri_config = FriConfig {
-        log_blowup: 2,
-        num_queries: 10,
-        log_folding_factor,
-        proof_of_work_bits: 8,
-        soundness_type: p3_fri::SoundnessType::Conjecture,
-        protocol_security_level: 128,
-        mmcs,
-    };
+    let fri_config = FriConfig::new_without_secbits(log_folding_factor, 10, 2, 8, mmcs);
     (perm, fri_config)
 }
 
@@ -63,7 +55,7 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R, log_folding_factor: usize, degree_bits: 
             let evals = RowMajorMatrix::<Val>::rand_nonzero(rng, 1 << deg_bits, 1);
             println!("evals len:{:?}", (1 << deg_bits));
             //fix added_bit
-            let mut lde = dft.coset_lde_batch(evals, fc.log_blowup, shift);
+            let mut lde = dft.coset_lde_batch(evals, fc.log_blowup(), shift);
             reverse_matrix_index_bits(&mut lde);
             lde
         })
@@ -147,7 +139,6 @@ fn do_test_fri_ldt<R: Rng>(rng: &mut R, log_folding_factor: usize, degree_bits: 
 #[test]
 fn test_fri_ldt() {
     tracing_subscriber::fmt::init();
-    tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(0);
@@ -158,7 +149,6 @@ fn test_fri_ldt() {
 #[test]
 fn test_fri_ldt_with_folding_degree_4() {
     tracing_subscriber::fmt::init();
-    tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(i);
@@ -169,7 +159,6 @@ fn test_fri_ldt_with_folding_degree_4() {
 #[test]
 fn test_fri_ldt_with_folding_degree_8() {
     tracing_subscriber::fmt::init();
-    tracing::info!("开始 FRI LDT 测试");
     // FRI is kind of flaky depending on indexing luck
     for i in 0..4 {
         let mut rng = ChaCha20Rng::seed_from_u64(i);

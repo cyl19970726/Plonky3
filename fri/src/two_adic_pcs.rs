@@ -22,9 +22,9 @@ use p3_util::{log2_strict_usize, reverse_bits_len, reverse_slice_index_bits, Vec
 use serde::{Deserialize, Serialize};
 use tracing::{info_span, instrument};
 
-use crate::fold_even_odd::{fold_poly, multi_fold_row, yu_fold_poly};
+use crate::fold_even_odd::{fold_poly, multi_fold_row, recursive_fold_poly};
 use crate::verifier::{self, FriError};
-use crate::{fold_poly_matrix, prover, FriConfig, FriGenericConfig, FriProof};
+use crate::{fold_poly_matrix, prover, recursive_fold_poly_matrix, FriConfig, FriGenericConfig, FriProof, LdtConfig};
 
 #[derive(Debug)]
 pub struct TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs> {
@@ -81,7 +81,7 @@ impl<F: TwoAdicField, InputProof, InputError: Debug> FriGenericConfig<F>
     }
 
     fn fold_matrix<M: Matrix<F>>(&self, beta: F, m: M, folding_factor: usize) -> Vec<F> {
-        fold_poly_matrix(m, beta, folding_factor)
+        recursive_fold_poly_matrix(m, beta, folding_factor)
     }
 }
 
@@ -121,7 +121,7 @@ where
                 let shift = Val::generator() / domain.shift;
                 // Commit to the bit-reversed LDE.
                 self.dft
-                    .coset_lde_batch(evals, self.fri.log_blowup, shift)
+                    .coset_lde_batch(evals, self.fri.log_blowup(), shift)
                     .bit_reverse_rows()
                     .to_row_major_matrix()
             })
@@ -243,7 +243,7 @@ where
                     let ys = info_span!("compute opened values with Lagrange interpolation")
                         .in_scope(|| {
                             let (low_coset, _) =
-                                mat.split_rows(mat.height() >> self.fri.log_blowup);
+                                mat.split_rows(mat.height() >> self.fri.log_blowup());
                             interpolate_coset(
                                 &BitReversalPerm::new_view(low_coset),
                                 Val::generator(),
@@ -319,7 +319,7 @@ where
         // Batch combination challenge
         let alpha: Challenge = challenger.sample_ext_element();
 
-        let log_global_max_height = proof.commit_phase_commits.len() + self.fri.log_blowup;
+        let log_global_max_height = proof.commit_phase_commits.len() + self.fri.log_blowup();
 
         let g: TwoAdicFriGenericConfigForMmcs<Val, InputMmcs> =
             TwoAdicFriGenericConfig(PhantomData);
@@ -333,7 +333,7 @@ where
             for (batch_opening, (batch_commit, mats)) in izip!(input_proof, &rounds) {
                 let batch_heights = mats
                     .iter()
-                    .map(|(domain, _)| domain.size() << self.fri.log_blowup)
+                    .map(|(domain, _)| domain.size() << self.fri.log_blowup())
                     .collect_vec();
                 let batch_dims = batch_heights
                     .iter()
@@ -356,7 +356,7 @@ where
                 for (mat_opening, (mat_domain, mat_points_and_values)) in
                     izip!(&batch_opening.opened_values, mats)
                 {
-                    let log_height = log2_strict_usize(mat_domain.size()) + self.fri.log_blowup;
+                    let log_height = log2_strict_usize(mat_domain.size()) + self.fri.log_blowup();
 
                     let bits_reduced = log_global_max_height - log_height;
                     let rev_reduced_index = reverse_bits_len(index >> bits_reduced, log_height);

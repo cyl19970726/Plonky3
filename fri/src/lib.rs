@@ -27,7 +27,6 @@ use tracing::{info_span, instrument};
 pub use two_adic_pcs::*;
 use verifier::FriError;
 
-// todo: config
 pub trait LdtProver<'a, G, Val, Challenge, M, Challenger>
 where
     Val: Field,
@@ -40,8 +39,6 @@ where
     type Conf: LdtConfig<M>;
 
     fn new(g: &'a Self::Conf) -> Self;
-
-    fn folding_factor(&self) -> usize;
 
     fn prove(
         &self,
@@ -64,8 +61,6 @@ where
     type Conf;
     fn new(config: &'a Self::Conf) -> Self;
 
-    fn folding_factor(&self) -> usize;
-
     fn verify(
         &self,
         g: &G,
@@ -76,15 +71,22 @@ where
 }
 
 pub trait LdtConfig<M> {
+
+    fn new_without_secbits(log_folding_factor: usize, query_num: usize, log_blowup: usize,  pow_bits: usize, m: M) -> Self;
+
+    fn new_without_querynum(log_folding_factor: usize, query_num: usize, log_blowup: usize,  pow_bits: usize, m: M) -> Self;
+
     fn num_queries(&self, log_inv_rate: usize) -> usize;
 
     fn log_folding_factor(&self) -> usize;
 
-    fn log_start_degree(&self) -> usize;
-
     fn pow_bits(&self) -> usize;
 
     fn log_blowup(&self) -> usize;
+
+    fn blowup(&self) -> usize {
+        1 << self.log_blowup()
+    }
 
     fn protocol_security_level(&self) -> usize;
 
@@ -93,12 +95,11 @@ pub trait LdtConfig<M> {
     fn get_mmcs(&self) -> &M;
 }
 
-// log_start_degree: usize,log_blowup: usize,log_folding_factor: usize, pow_bits: usize, protocol_security_level: usize
 #[derive(Debug)]
 pub struct LdtParam {
-    pub log_start_degree: usize,
     // log_rho_inv
     pub log_blowup: usize,
+    pub num_queries: usize,
     pub log_folding_factor: usize,
     pub pow_bits: usize,
     pub protocol_security_level: usize,
@@ -106,6 +107,30 @@ pub struct LdtParam {
 }
 
 impl LdtParam {
+    pub fn new_without_secbits(log_folding_factor: usize, query_num: usize, log_blowup: usize,  pow_bits: usize) -> Self{
+        let sec_bits = protocol_security_level(log_blowup, SoundnessType::Conjecture, query_num);
+        Self{
+            log_blowup,
+            num_queries: query_num,
+            log_folding_factor,
+            pow_bits,
+            protocol_security_level: sec_bits + pow_bits,
+            soundness_type: SoundnessType::Conjecture,
+        }
+    }
+
+    pub fn new_without_querynum(log_folding_factor: usize, sec_bits: usize, log_blowup: usize,  pow_bits: usize) -> Self{
+        let query_num = num_queries(log_blowup, SoundnessType::Conjecture, sec_bits - pow_bits);
+        Self{
+            log_blowup,
+            num_queries: query_num,
+            log_folding_factor,
+            pow_bits,
+            protocol_security_level: sec_bits,
+            soundness_type: SoundnessType::Conjecture,
+        }
+    }
+
     pub fn num_queries(&self, log_inv_rate: usize) -> usize {
         let constant = match self.soundness_type {
             SoundnessType::Provable => 2,
@@ -113,7 +138,26 @@ impl LdtParam {
         };
         ((constant * self.protocol_security_level) as f64 / log_inv_rate as f64).ceil() as usize
     }
+
 }
+
+pub fn num_queries(log_inv_rate: usize, soundness_type: SoundnessType, protocol_security_level: usize) -> usize {
+    let constant = match soundness_type {
+        SoundnessType::Provable => 2,
+        SoundnessType::Conjecture => 1,
+    };
+    ((constant * protocol_security_level) as f64 / log_inv_rate as f64).ceil() as usize
+}
+
+pub fn protocol_security_level(log_inv_rate: usize, soundness_type: SoundnessType, num_queries: usize) -> usize {
+    let constant = match soundness_type {
+        SoundnessType::Provable => 2,
+        SoundnessType::Conjecture => 1,
+    };
+    ((num_queries as f64 * log_inv_rate as f64) / constant as f64).ceil() as usize
+}
+
+
 
 #[derive(Debug, Clone, Copy)]
 pub enum SoundnessType {

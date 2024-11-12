@@ -64,17 +64,8 @@ pub fn fold_poly<F: TwoAdicField, M: Matrix<F>>(
         poly.len() % folding_factor == 0,
         "The length of the poly must be divisible by the folding factor"
     );
-
-    // let mut xs = F::two_adic_generator(log2_strict_usize(poly.len())).powers().take(poly.len()).collect::<Vec<F>>();
-
-    // reverse_slice_index_bits(&mut xs);
-    // let xs_matrix = RowMajorMatrix::new(xs,folding_factor);
     let m = RowMajorMatrix::new(poly, folding_factor);
     fold_poly_matrix(m, beta, folding_factor)
-    // Parallel processing and caching beta powers
-    // m.row_slices().zip(xs_matrix.row_slices()).map(|(eval_row,xs_row)| {
-    //     lagrange_interpolate_and_evaluate(xs_row,eval_row,beta)
-    // }).collect::<Vec<F>>()
 }
 
 pub fn fold_poly_matrix<F: TwoAdicField, M: Matrix<F>>(
@@ -99,7 +90,7 @@ pub fn fold_poly_matrix<F: TwoAdicField, M: Matrix<F>>(
         .collect::<Vec<F>>()
 }
 
-pub fn yu_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
+pub fn recursive_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
     let log_folding_factor = log2_ceil_usize(folding_factor);
 
     let mut folded_poly = poly;
@@ -111,6 +102,10 @@ pub fn yu_fold_poly<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usiz
         folded_poly = fold_even_odd(folded_poly, betas[i])
     }
     folded_poly
+}
+
+pub fn recursive_fold_poly_matrix<F: TwoAdicField, M: Matrix<F>>(poly: M, beta: F, folding_factor: usize) -> Vec<F> {
+    fold_poly_with_dft(poly.to_row_major_matrix().values, beta, folding_factor)
 }
 
 pub fn fold_poly_with_dft<F: TwoAdicField>(poly: Vec<F>, beta: F, folding_factor: usize) -> Vec<F> {
