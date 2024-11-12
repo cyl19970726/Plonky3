@@ -6,7 +6,7 @@ use itertools::{izip, Itertools};
 use p3_challenger::{CanObserve, FieldChallenger, GrindingChallenger};
 use p3_commit::Mmcs;
 use p3_field::{ExtensionField, Field};
-use p3_fri::{FriConfig, FriGenericConfig};
+use p3_fri::{FriConfig, FriGenericConfig, LdtConfig};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_util::log2_strict_usize;
 use tracing::{info_span, instrument};
@@ -38,11 +38,11 @@ where
 
     let commit_phase_result = commit_phase(g, config, inputs, challenger);
 
-    let pow_witness = challenger.grind(config.proof_of_work_bits);
+    let pow_witness = challenger.grind(config.pow_bits());
 
     let query_proofs = info_span!("query phase").in_scope(|| {
         iter::repeat_with(|| challenger.sample_bits(log_max_height + g.extra_query_index_bits()))
-            .take(config.num_queries)
+            .take(config.num_queries(config.log_blowup()))
             .map(|index| CircleQueryProof {
                 input_proof: open_input(index),
                 commit_phase_openings: answer_query(
@@ -95,7 +95,7 @@ where
         let beta: Challenge = challenger.sample_ext_element();
         // We passed ownership of `current` to the MMCS, so get a reference to it
         let leaves = config.mmcs.get_matrices(&prover_data).pop().unwrap();
-        folded = g.fold_matrix(beta, leaves.as_view(),config.folding_factor);
+        folded = g.fold_matrix(beta, leaves.as_view(), 1 << config.log_folding_factor());
 
         commits.push(commit);
         data.push(prover_data);

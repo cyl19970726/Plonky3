@@ -10,6 +10,7 @@ use p3_field::extension::ComplexExtendable;
 use p3_field::{ExtensionField, Field};
 use p3_fri::verifier::FriError;
 use p3_fri::FriConfig;
+use p3_fri::LdtConfig;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::{Dimensions, Matrix};
 use p3_maybe_rayon::prelude::*;
@@ -113,7 +114,7 @@ where
                 );
                 CircleEvaluations::from_natural_order(domain, evals)
                     .extrapolate(CircleDomain::standard(
-                        domain.log_n + self.fri_config.log_blowup,
+                        domain.log_n + self.fri_config.log_blowup(),
                     ))
                     .to_cfft_order()
             })
@@ -232,7 +233,7 @@ where
             .map(|(log_height, (_, mut ro))| {
                 assert!(log_height > 0);
                 log_heights.push(log_height);
-                let lambda = extract_lambda(&mut ro, self.fri_config.log_blowup);
+                let lambda = extract_lambda(&mut ro, self.fri_config.log_blowup());
                 lambdas.push(lambda);
                 // Prepare for first layer fold with 2 siblings per leaf.
                 RowMajorMatrix::new(ro, 2)
@@ -341,7 +342,7 @@ where
 
         // +1 to account for first layer
         let log_global_max_height =
-            proof.fri_proof.commit_phase_commits.len() + self.fri_config.log_blowup + 1;
+            proof.fri_proof.commit_phase_commits.len() + self.fri_config.log_blowup() + 1;
 
         let g: CircleFriConfig<Val, Challenge, InputMmcs, FriMmcs> =
             CircleFriGenericConfig(PhantomData);
@@ -364,7 +365,7 @@ where
                 for (batch_opening, (batch_commit, mats)) in izip!(input_openings, &rounds) {
                     let batch_heights: Vec<usize> = mats
                         .iter()
-                        .map(|(domain, _)| (domain.size() << self.fri_config.log_blowup))
+                        .map(|(domain, _)| (domain.size() << self.fri_config.log_blowup()))
                         .collect_vec();
                     let batch_dims: Vec<Dimensions> = batch_heights
                         .iter()
@@ -388,7 +389,7 @@ where
                     for (ps_at_x, (mat_domain, mat_points_and_values)) in
                         izip!(&batch_opening.opened_values, mats)
                     {
-                        let log_height = mat_domain.log_n + self.fri_config.log_blowup;
+                        let log_height = mat_domain.log_n + self.fri_config.log_blowup();
                         let bits_reduced = log_global_max_height - log_height;
                         let orig_idx = cfft_permute_index(index >> bits_reduced, log_height);
 
@@ -418,7 +419,7 @@ where
                         .map(|((log_height, (_, ro)), &fl_sib, &lambda)| {
                             assert!(log_height > 0);
 
-                            let orig_size = log_height - self.fri_config.log_blowup;
+                            let orig_size = log_height - self.fri_config.log_blowup();
                             let bits_reduced = log_global_max_height - log_height;
                             let orig_idx = cfft_permute_index(index >> bits_reduced, log_height);
 
@@ -509,13 +510,7 @@ mod tests {
         let challenge_mmcs = ChallengeMmcs::new(val_mmcs.clone());
 
         type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
-
-        let fri_config = FriConfig {
-            log_blowup: 1,
-            num_queries: 2,
-            proof_of_work_bits: 1,
-            mmcs: challenge_mmcs,
-        };
+        let fri_config = FriConfig::new_without_secbits(1, 2, 1, 1, challenge_mmcs);
 
         type Pcs = CirclePcs<Val, ValMmcs, ChallengeMmcs>;
         let pcs = Pcs {

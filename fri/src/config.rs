@@ -4,30 +4,60 @@ use core::fmt::Debug;
 use p3_field::Field;
 use p3_matrix::Matrix;
 
+use crate::{LdtConfig, LdtParam, SoundnessType};
+
 #[derive(Debug)]
 pub struct FriConfig<M> {
-    pub log_blowup: usize,
-    pub folding_factor: usize,
-    pub log_folding_factor: usize,
-    pub num_queries: usize,
-    pub proof_of_work_bits: usize,
+    pub param: LdtParam,
     pub mmcs: M,
 }
 
-impl<M> FriConfig<M> {
-    pub const fn blowup(&self) -> usize {
-        1 << self.log_blowup
+
+impl<M> LdtConfig<M> for FriConfig<M> {
+
+    fn new_without_querynum(log_folding_factor: usize, sec_bits: usize, log_blowup: usize,  pow_bits: usize, m : M) -> Self {
+        Self{
+            param: LdtParam::new_without_querynum(log_folding_factor, sec_bits, log_blowup, pow_bits),
+            mmcs: m,
+        }
     }
 
-    /// Returns the soundness bits of this FRI instance based on the
-    /// [ethSTARK](https://eprint.iacr.org/2021/582) conjecture.
-    ///
-    /// Certain users may instead want to look at proven soundness, a more complex calculation which
-    /// isn't currently supported by this crate.
-    pub fn conjectured_soundness_bits(&self) -> usize {
-        self.log_blowup * self.num_queries + self.proof_of_work_bits
+    fn new_without_secbits(log_folding_factor: usize, query_num: usize, log_blowup: usize,  pow_bits: usize, m: M) -> Self {
+        Self{
+            param: LdtParam::new_without_secbits(log_folding_factor, query_num, log_blowup, pow_bits),
+            mmcs: m,
+        }
+    }
+
+    fn num_queries(&self, _log_inv_rate: usize) -> usize {
+        self.param.num_queries
+    }
+
+    fn log_folding_factor(&self) -> usize {
+        self.param.log_folding_factor
+    }
+
+    fn log_blowup(&self) -> usize {
+        self.param.log_blowup
+    }
+
+    fn pow_bits(&self) -> usize {
+        self.param.pow_bits
+    }
+
+    fn protocol_security_level(&self) -> usize {
+        self.param.protocol_security_level
+    }
+
+    fn soundness_type(&self) -> SoundnessType {
+        self.param.soundness_type
+    }
+
+    fn get_mmcs(&self) -> &M {
+        &self.mmcs
     }
 }
+
 
 /// Whereas `FriConfig` encompasses parameters the end user can set, `FriGenericConfig` is
 /// set by the PCS calling FRI, and abstracts over implementation details of the PCS.
